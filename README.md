@@ -600,28 +600,53 @@ if value != nil:
 
 ### Result Type
 
+Flex provides built-in functions for Result-style error handling:
+
 ```flex
-fn divide a: int, b: int -> Result[int, str]:
+// Create success and error results
+ok_val = Ok(42)        // Success with value 42
+err_val = Err(0)       // Error
+
+// Check result status
+is_ok(ok_val)          // Returns 1 (true)
+is_err(ok_val)         // Returns 0 (false)
+is_ok(err_val)         // Returns 0 (false)
+is_err(err_val)        // Returns 1 (true)
+
+// Extract values
+unwrap(ok_val)         // Returns 42
+unwrap_or(err_val, 0)  // Returns 0 (the default)
+```
+
+Example with functions:
+
+```flex
+fn divide a, b:
     if b == 0:
-        return Err("Division by zero")
+        return Err(0)
     return Ok(a / b)
 
 // Using Result
 result = divide(10, 2)
-match result:
-    Ok(value) -> println("Result: {value}")
-    Err(msg) -> println("Error: {msg}")
+if is_ok(result):
+    println("Result: ", unwrap(result))
+else:
+    println("Error: division by zero")
+
+// Or use unwrap_or for a default
+safe_result = unwrap_or(divide(10, 0), 0)  // Returns 0 on error
 ```
 
-### Error Propagation
+### Result Functions
 
-Use `?` to propagate errors:
-
-```flex
-fn calculate x, y -> Result[int, str]:
-    result = divide(x, y)?      // Returns Err if divide fails
-    return Ok(result * 2)
-```
+| Function | Description | Example |
+|----------|-------------|---------|
+| `Ok(value)` | Create success result | `Ok(42)` |
+| `Err(value)` | Create error result | `Err(0)` |
+| `is_ok(result)` | Check if Ok | `is_ok(Ok(1))` → `1` |
+| `is_err(result)` | Check if Err | `is_err(Err(0))` → `1` |
+| `unwrap(result)` | Extract value | `unwrap(Ok(42))` → `42` |
+| `unwrap_or(result, default)` | Extract or default | `unwrap_or(Err(0), 10)` → `10` |
 
 ### Try Expression
 
@@ -1452,6 +1477,8 @@ flex
 | File Imports | ✅ Complete | `use "file.fx"` |
 | Extern Functions | ✅ Complete | Windows DLL calls |
 | Built-in Functions | ✅ Complete | print, len, time, etc. |
+| Result Types | ✅ Complete | Ok, Err, is_ok, is_err, unwrap, unwrap_or |
+| Pattern Match Guards | ✅ Complete | `x if condition -> body` syntax |
 
 ### Partial / Syntax Only ⚠️
 
@@ -1462,9 +1489,10 @@ flex
 | Generics | ⚠️ Partial | Type erasure approach, no full monomorphization |
 | Macros | ✅ Working | Full expression/statement cloning in expander |
 | Syntax Macros | ⚠️ Partial | Parsing works, transform incomplete |
-| Pattern Matching | ✅ Working | Literal, wildcard, and variable binding patterns |
+| Pattern Matching | ✅ Working | Literal, wildcard, variable binding, and guards |
 | push/pop/len | ✅ Working | Runtime list operations with dynamic sizing |
 | Try/Else | ✅ Working | Nil-coalescing pattern for error handling |
+| Error Propagation (`?`) | ❌ Not Yet | Use unwrap_or() as alternative |
 
 ### Not Implemented ❌
 
@@ -1496,9 +1524,13 @@ flex
 - [x] SIMD vectorization
 - [x] Lambda codegen
 - [x] List operations
+- [x] Result types (Ok, Err, is_ok, is_err, unwrap, unwrap_or)
+- [x] Pattern matching with guards
+- [ ] Error propagation (`?` operator)
 - [ ] Fix module type checking
-- [ ] Fix single-param function edge cases
+- [ ] Fix spawn parameterless function edge case
 - [ ] Pattern destructuring (`let (a, b) = tuple`)
+- [ ] Maps in native codegen
 - [ ] Complete macro execution
 
 ### Phase 2: Multi-Platform Support

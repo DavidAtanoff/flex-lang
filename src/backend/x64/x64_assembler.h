@@ -48,6 +48,7 @@ public:
     void mov_mem_rcx_rax();
     void mov_mem_rax_rcx();
     void mov_rcx_mem_rax();
+    void mov_rax_mem_rcx();  // rax = [rcx]
     
     // LEA
     void lea_rcx_rip_fixup(uint32_t targetRVA);
@@ -168,6 +169,13 @@ public:
     void mov_r15_r9();
     void mov_r15_imm64(int64_t val);
     void xor_r15_r15();
+    
+    // Move from callee-saved to RCX (for closure captures)
+    void mov_rcx_rbx();
+    void mov_rcx_r12();
+    void mov_rcx_r13();
+    void mov_rcx_r14();
+    void mov_rcx_r15();
     
     // Control flow
     void jmp_rel32(const std::string& label);

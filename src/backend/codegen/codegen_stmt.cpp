@@ -767,14 +767,28 @@ void NativeCodeGen::visit(MatchStmt& node) {
     
     // Generate code for each case
     for (size_t i = 0; i < node.cases.size(); i++) {
-        auto& [pattern, body] = node.cases[i];
+        auto& case_ = node.cases[i];
+        auto* pattern = case_.pattern.get();
+        auto* guard = case_.guard.get();
+        auto* body = case_.body.get();
         
         // Check if this is the wildcard pattern '_'
-        if (auto* ident = dynamic_cast<Identifier*>(pattern.get())) {
+        if (auto* ident = dynamic_cast<Identifier*>(pattern)) {
             if (ident->name == "_") {
-                // Wildcard matches everything - just execute the body
-                body->accept(*this);
-                asm_.jmp_rel32(endLabel);
+                // Wildcard matches everything
+                // But if there's a guard, we still need to check it
+                if (guard) {
+                    std::string nextCase = newLabel("match_case");
+                    guard->accept(*this);
+                    asm_.test_rax_rax();
+                    asm_.jz_rel32(nextCase);
+                    body->accept(*this);
+                    asm_.jmp_rel32(endLabel);
+                    asm_.label(nextCase);
+                } else {
+                    body->accept(*this);
+                    asm_.jmp_rel32(endLabel);
+                }
                 continue;
             }
             
@@ -788,15 +802,26 @@ void NativeCodeGen::visit(MatchStmt& node) {
                 asm_.mov_rax_mem_rbp(locals["$match_value"]);
                 asm_.mov_mem_rbp_rax(locals[ident->name]);
                 
-                // Execute the body with the bound variable
-                body->accept(*this);
-                asm_.jmp_rel32(endLabel);
+                // If there's a guard, check it
+                if (guard) {
+                    std::string nextCase = newLabel("match_case");
+                    guard->accept(*this);
+                    asm_.test_rax_rax();
+                    asm_.jz_rel32(nextCase);
+                    body->accept(*this);
+                    asm_.jmp_rel32(endLabel);
+                    asm_.label(nextCase);
+                } else {
+                    // Execute the body with the bound variable
+                    body->accept(*this);
+                    asm_.jmp_rel32(endLabel);
+                }
                 continue;
             }
         }
         
         // Check for tuple/list destructuring pattern
-        if (auto* listExpr = dynamic_cast<ListExpr*>(pattern.get())) {
+        if (auto* listExpr = dynamic_cast<ListExpr*>(pattern)) {
             std::string nextCase = newLabel("match_case");
             
             // For each element in the pattern, check if it matches
@@ -818,28 +843,49 @@ void NativeCodeGen::visit(MatchStmt& node) {
             asm_.mov_rax_mem_rbp(locals["$match_value"]);
             
             // Bind each variable to the corresponding list element
-            for (auto& [idx, varName] : bindings) {
-                allocLocal(varName);
+            for (auto& binding : bindings) {
+                allocLocal(binding.second);
                 asm_.mov_rax_mem_rbp(locals["$match_value"]);
-                if (idx > 0) {
-                    asm_.add_rax_imm32((int32_t)(idx * 8));
+                if (binding.first > 0) {
+                    asm_.add_rax_imm32((int32_t)(binding.first * 8));
                 }
                 asm_.mov_rax_mem_rax();  // Load element value
-                asm_.mov_mem_rbp_rax(locals[varName]);
+                asm_.mov_mem_rbp_rax(locals[binding.second]);
+            }
+            
+            // If there's a guard, check it
+            if (guard) {
+                guard->accept(*this);
+                asm_.test_rax_rax();
+                asm_.jz_rel32(nextCase);
             }
             
             // Execute the body
             body->accept(*this);
             asm_.jmp_rel32(endLabel);
+            
+            if (guard) {
+                asm_.label(nextCase);
+            }
             continue;
         }
         
         // Check for record destructuring pattern
-        if (auto* recordExpr = dynamic_cast<RecordExpr*>(pattern.get())) {
+        if (auto* recordExpr = dynamic_cast<RecordExpr*>(pattern)) {
             // For records, we'd need field offset information
             // For now, just bind the whole value and execute body
-            body->accept(*this);
-            asm_.jmp_rel32(endLabel);
+            if (guard) {
+                std::string nextCase = newLabel("match_case");
+                guard->accept(*this);
+                asm_.test_rax_rax();
+                asm_.jz_rel32(nextCase);
+                body->accept(*this);
+                asm_.jmp_rel32(endLabel);
+                asm_.label(nextCase);
+            } else {
+                body->accept(*this);
+                asm_.jmp_rel32(endLabel);
+            }
             continue;
         }
         
@@ -856,6 +902,13 @@ void NativeCodeGen::visit(MatchStmt& node) {
         // Compare: if not equal, jump to next case
         asm_.cmp_rax_rcx();
         asm_.jnz_rel32(nextCase);
+        
+        // Pattern matched! Now check guard if present
+        if (guard) {
+            guard->accept(*this);
+            asm_.test_rax_rax();
+            asm_.jz_rel32(nextCase);
+        }
         
         // Match! Execute the body
         body->accept(*this);

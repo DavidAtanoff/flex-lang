@@ -80,7 +80,7 @@ void TailCallOptimizationPass::findTailCalls(Statement* stmt, const std::string&
     }
     else if (auto* matchStmt = dynamic_cast<MatchStmt*>(stmt)) {
         for (auto& case_ : matchStmt->cases) {
-            findTailCalls(case_.second.get(), fnName, tailCalls);
+            findTailCalls(case_.body.get(), fnName, tailCalls);
         }
         findTailCalls(matchStmt->defaultCase.get(), fnName, tailCalls);
     }

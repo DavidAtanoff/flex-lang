@@ -144,7 +144,15 @@ StmtPtr Parser::matchStatement() {
     skipNewlines();
     
     while (!check(TokenType::DEDENT) && !isAtEnd()) {
-        auto pattern = expression();
+        // Parse pattern - could be a variable binding like 'x' or a literal
+        auto pattern = primary();  // Use primary() to avoid parsing 'if' as part of expression
+        
+        // Check for guard: pattern if condition
+        ExprPtr guard = nullptr;
+        if (match(TokenType::IF)) {
+            guard = expression();
+        }
+        
         if (!match(TokenType::ARROW)) {
             consume(TokenType::COLON, "Expected '->' or ':' after match pattern");
         }
@@ -152,11 +160,11 @@ StmtPtr Parser::matchStatement() {
         if (check(TokenType::NEWLINE)) {
             match(TokenType::NEWLINE);
             auto body = block();
-            stmt->cases.emplace_back(std::move(pattern), std::move(body));
+            stmt->cases.emplace_back(std::move(pattern), std::move(guard), std::move(body));
         } else if (check(TokenType::RETURN)) {
             advance();
             auto retStmt = returnStatement();
-            stmt->cases.emplace_back(std::move(pattern), std::move(retStmt));
+            stmt->cases.emplace_back(std::move(pattern), std::move(guard), std::move(retStmt));
         } else if (check(TokenType::IDENTIFIER)) {
             static const std::unordered_set<std::string> builtins = {"print", "println", "input", "exit"};
             std::string name = peek().lexeme;
@@ -167,18 +175,18 @@ StmtPtr Parser::matchStatement() {
                 auto call = std::make_unique<CallExpr>(std::move(callee), loc);
                 call->args.push_back(expression());
                 auto exprStmt = std::make_unique<ExprStmt>(std::move(call), loc);
-                stmt->cases.emplace_back(std::move(pattern), std::move(exprStmt));
+                stmt->cases.emplace_back(std::move(pattern), std::move(guard), std::move(exprStmt));
                 match(TokenType::NEWLINE);
             } else {
                 auto expr = expression();
                 auto exprStmt = std::make_unique<ExprStmt>(std::move(expr), peek().location);
-                stmt->cases.emplace_back(std::move(pattern), std::move(exprStmt));
+                stmt->cases.emplace_back(std::move(pattern), std::move(guard), std::move(exprStmt));
                 match(TokenType::NEWLINE);
             }
         } else {
             auto expr = expression();
             auto exprStmt = std::make_unique<ExprStmt>(std::move(expr), peek().location);
-            stmt->cases.emplace_back(std::move(pattern), std::move(exprStmt));
+            stmt->cases.emplace_back(std::move(pattern), std::move(guard), std::move(exprStmt));
             match(TokenType::NEWLINE);
         }
         skipNewlines();

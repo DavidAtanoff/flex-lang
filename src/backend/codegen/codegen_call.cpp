@@ -650,6 +650,86 @@ void NativeCodeGen::visit(CallExpr& node) {
             return;
         }
 
+        // Handle Ok(value) - Result type success constructor
+        // Returns a tagged value: high bit clear, value in lower bits
+        // For simplicity: Ok(x) returns x if x != 0, or 1 if x == 0 (to distinguish from Err)
+        if (id->name == "Ok" && node.args.size() == 1) {
+            node.args[0]->accept(*this);
+            // If value is 0, return 1 to distinguish from Err(0)
+            // We use a special encoding: Ok values have bit 63 clear
+            // For now, simple approach: Ok(x) returns x | 1 (ensure non-zero)
+            // Actually, let's use a cleaner approach:
+            // Ok(x) returns (x << 1) | 1  - LSB=1 means Ok
+            // Err(x) returns (x << 1) | 0 - LSB=0 means Err
+            // This way we can always distinguish Ok from Err
+            
+            // Shift left by 1 and set LSB to 1
+            asm_.code.push_back(0x48); asm_.code.push_back(0xD1); asm_.code.push_back(0xE0);  // shl rax, 1
+            asm_.code.push_back(0x48); asm_.code.push_back(0x83); asm_.code.push_back(0xC8); asm_.code.push_back(0x01);  // or rax, 1
+            return;
+        }
+        
+        // Handle Err(value) - Result type error constructor
+        // Returns a tagged value: LSB=0 means error
+        if (id->name == "Err" && node.args.size() == 1) {
+            node.args[0]->accept(*this);
+            // Shift left by 1, LSB stays 0 (error)
+            asm_.code.push_back(0x48); asm_.code.push_back(0xD1); asm_.code.push_back(0xE0);  // shl rax, 1
+            return;
+        }
+        
+        // Handle is_ok(result) - Check if Result is Ok
+        if (id->name == "is_ok" && node.args.size() == 1) {
+            node.args[0]->accept(*this);
+            // Check LSB: if 1, it's Ok
+            asm_.code.push_back(0x48); asm_.code.push_back(0x83); asm_.code.push_back(0xE0); asm_.code.push_back(0x01);  // and rax, 1
+            return;
+        }
+        
+        // Handle is_err(result) - Check if Result is Err
+        if (id->name == "is_err" && node.args.size() == 1) {
+            node.args[0]->accept(*this);
+            // Check LSB: if 0, it's Err
+            asm_.code.push_back(0x48); asm_.code.push_back(0x83); asm_.code.push_back(0xE0); asm_.code.push_back(0x01);  // and rax, 1
+            asm_.code.push_back(0x48); asm_.code.push_back(0x83); asm_.code.push_back(0xF0); asm_.code.push_back(0x01);  // xor rax, 1 (flip)
+            return;
+        }
+        
+        // Handle unwrap(result) - Get the value from Ok, or 0 from Err
+        if (id->name == "unwrap" && node.args.size() == 1) {
+            node.args[0]->accept(*this);
+            // Shift right by 1 to get the original value
+            asm_.code.push_back(0x48); asm_.code.push_back(0xD1); asm_.code.push_back(0xE8);  // shr rax, 1
+            return;
+        }
+        
+        // Handle unwrap_or(result, default) - Get value from Ok, or default if Err
+        if (id->name == "unwrap_or" && node.args.size() == 2) {
+            node.args[0]->accept(*this);
+            asm_.push_rax();  // Save result
+            
+            // Check if Ok (LSB == 1)
+            asm_.code.push_back(0x48); asm_.code.push_back(0x83); asm_.code.push_back(0xE0); asm_.code.push_back(0x01);  // and rax, 1
+            
+            std::string okLabel = newLabel("unwrap_ok");
+            std::string endLabel = newLabel("unwrap_end");
+            
+            asm_.test_rax_rax();
+            asm_.jnz_rel32(okLabel);
+            
+            // Err case: return default
+            asm_.pop_rax();  // Discard result
+            node.args[1]->accept(*this);
+            asm_.jmp_rel32(endLabel);
+            
+            // Ok case: return unwrapped value
+            asm_.label(okLabel);
+            asm_.pop_rax();
+            asm_.code.push_back(0x48); asm_.code.push_back(0xD1); asm_.code.push_back(0xE8);  // shr rax, 1
+            
+            asm_.label(endLabel);
+            return;
+        }
         
         if (id->name == "str" && node.args.size() == 1) {
             std::string strVal;
@@ -828,7 +908,58 @@ void NativeCodeGen::visit(CallExpr& node) {
                 }
             }
             
+            // For indirect calls through variables, use closure calling convention
+            // The callee is a closure pointer, we need to:
+            // 1. Load closure pointer
+            // 2. Shift args: arg0->rdx, arg1->r8, arg2->r9
+            // 3. Put closure pointer in rcx
+            // 4. Load function pointer from [closure+0]
+            // 5. Call
+            
+            // First, check if this is a direct function call (known label)
+            if (auto* id = dynamic_cast<Identifier*>(node.callee.get())) {
+                if (asm_.labels.count(id->name)) {
+                    // Direct function call - use standard convention
+                    if (!stackAllocated_) asm_.sub_rsp_imm32(0x20);
+                    asm_.call_rel32(id->name);
+                    if (!stackAllocated_) asm_.add_rsp_imm32(0x20);
+                    return;
+                }
+            }
+            
+            // Indirect call through closure - need to shift args
+            // Save the args we already loaded (they're in rcx, rdx, r8, r9)
+            // and reload them shifted
+            
+            // Get closure pointer first
             node.callee->accept(*this);
+            asm_.push_rax();  // Save closure pointer
+            
+            // Now reload args into shifted positions
+            // We need to re-evaluate args since we clobbered registers
+            for (int i = (int)node.args.size() - 1; i >= 0; i--) {
+                node.args[i]->accept(*this);
+                asm_.push_rax();
+            }
+            
+            // Pop args into shifted positions
+            if (node.args.size() >= 1) asm_.pop_rdx();
+            if (node.args.size() >= 2) {
+                asm_.code.push_back(0x41); asm_.code.push_back(0x58);  // pop r8
+            }
+            if (node.args.size() >= 3) {
+                asm_.code.push_back(0x41); asm_.code.push_back(0x59);  // pop r9
+            }
+            for (size_t i = 3; i < node.args.size(); i++) {
+                asm_.pop_rax();  // Discard extra args
+            }
+            
+            // Pop closure pointer into rcx
+            asm_.pop_rcx();
+            
+            // Load function pointer from closure
+            asm_.mov_rax_mem_rcx();
+            
             if (!stackAllocated_) asm_.sub_rsp_imm32(0x20);
             asm_.call_rax();
             if (!stackAllocated_) asm_.add_rsp_imm32(0x20);
@@ -861,25 +992,41 @@ void NativeCodeGen::visit(CallExpr& node) {
         }
     }
     
-    // Fallback: use push/pop for complex expressions
+    // Fallback: indirect call through closure pointer
+    // ALL lambdas use the closure calling convention:
+    // - First argument (rcx) is the closure pointer
+    // - Actual arguments are shifted: rdx, r8, r9, stack
+    // - Function pointer is loaded from [closure+0]
+    
+    // First, evaluate the callee to get the closure pointer
+    node.callee->accept(*this);
+    asm_.push_rax();  // Save closure pointer
+    
+    // Evaluate arguments in reverse order
     for (int i = (int)node.args.size() - 1; i >= 0; i--) {
         node.args[i]->accept(*this);
         asm_.push_rax();
     }
     
-    // Pop arguments into registers (Windows x64: rcx, rdx, r8, r9)
-    if (node.args.size() >= 1) asm_.pop_rcx();
-    if (node.args.size() >= 2) asm_.pop_rdx();
-    if (node.args.size() >= 3) {
-        // pop r8
-        asm_.code.push_back(0x41); asm_.code.push_back(0x58);
+    // Pop arguments into shifted positions (closure ptr will be rcx)
+    // arg0 -> rdx, arg1 -> r8, arg2 -> r9
+    if (node.args.size() >= 1) asm_.pop_rdx();
+    if (node.args.size() >= 2) {
+        asm_.code.push_back(0x41); asm_.code.push_back(0x58);  // pop r8
     }
-    if (node.args.size() >= 4) {
-        // pop r9
-        asm_.code.push_back(0x41); asm_.code.push_back(0x59);
+    if (node.args.size() >= 3) {
+        asm_.code.push_back(0x41); asm_.code.push_back(0x59);  // pop r9
+    }
+    for (size_t i = 3; i < node.args.size(); i++) {
+        asm_.pop_rax();  // Discard extra args (TODO: push to stack)
     }
     
-    node.callee->accept(*this);
+    // Pop closure pointer into rcx
+    asm_.pop_rcx();
+    
+    // Load function pointer from closure: rax = [rcx]
+    asm_.mov_rax_mem_rcx();
+    
     if (!stackAllocated_) asm_.sub_rsp_imm32(0x20);
     asm_.call_rax();
     if (!stackAllocated_) asm_.add_rsp_imm32(0x20);

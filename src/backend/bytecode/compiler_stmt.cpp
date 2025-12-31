@@ -214,7 +214,7 @@ void Compiler::visit(MatchStmt& node) {
     bool hasWildcard = false;
     
     for (auto& p : node.cases) {
-        if (auto* id = dynamic_cast<Identifier*>(p.first.get())) {
+        if (auto* id = dynamic_cast<Identifier*>(p.pattern.get())) {
             if (id->name == "_") {
                 hasWildcard = true;
                 continue;
@@ -222,12 +222,14 @@ void Compiler::visit(MatchStmt& node) {
         }
         
         emit(OpCode::DUP);
-        p.first->accept(*this);
+        p.pattern->accept(*this);
         emit(OpCode::EQ);
         size_t skipJump = emitJump(OpCode::JUMP_IF_FALSE);
         
+        // TODO: Handle guards in bytecode compiler
+        
         emit(OpCode::POP);
-        p.second->accept(*this);
+        p.body->accept(*this);
         endJumps.push_back(emitJump(OpCode::JUMP));
         
         patchJump(skipJump);
@@ -237,9 +239,9 @@ void Compiler::visit(MatchStmt& node) {
     
     if (hasWildcard) {
         for (auto& p : node.cases) {
-            if (auto* id = dynamic_cast<Identifier*>(p.first.get())) {
+            if (auto* id = dynamic_cast<Identifier*>(p.pattern.get())) {
                 if (id->name == "_") {
-                    p.second->accept(*this);
+                    p.body->accept(*this);
                     break;
                 }
             }

@@ -74,8 +74,9 @@ void DeadCodeEliminationPass::collectCallsFromStatement(Statement* stmt, std::un
     else if (auto* matchStmt = dynamic_cast<MatchStmt*>(stmt)) {
         collectCallsFromExpression(matchStmt->value.get(), calls);
         for (auto& case_ : matchStmt->cases) {
-            collectCallsFromExpression(case_.first.get(), calls);
-            collectCallsFromStatement(case_.second.get(), calls);
+            collectCallsFromExpression(case_.pattern.get(), calls);
+            if (case_.guard) collectCallsFromExpression(case_.guard.get(), calls);
+            collectCallsFromStatement(case_.body.get(), calls);
         }
         collectCallsFromStatement(matchStmt->defaultCase.get(), calls);
     }
@@ -172,6 +173,12 @@ void DeadCodeEliminationPass::collectCallsFromExpression(Expression* expr, std::
             }
         }
     }
+    else if (auto* spawn = dynamic_cast<SpawnExpr*>(expr)) {
+        collectCallsFromExpression(spawn->operand.get(), calls);
+    }
+    else if (auto* await = dynamic_cast<AwaitExpr*>(expr)) {
+        collectCallsFromExpression(await->operand.get(), calls);
+    }
 }
 
 void DeadCodeEliminationPass::computeReachableFunctions(Program& ast) {
@@ -260,8 +267,9 @@ void DeadCodeEliminationPass::collectFromStatement(Statement* stmt) {
     else if (auto* matchStmt = dynamic_cast<MatchStmt*>(stmt)) {
         collectFromExpression(matchStmt->value.get());
         for (auto& case_ : matchStmt->cases) {
-            collectFromExpression(case_.first.get());
-            collectFromStatement(case_.second.get());
+            collectFromExpression(case_.pattern.get());
+            if (case_.guard) collectFromExpression(case_.guard.get());
+            collectFromStatement(case_.body.get());
         }
         collectFromStatement(matchStmt->defaultCase.get());
     }
@@ -364,6 +372,12 @@ void DeadCodeEliminationPass::collectFromExpression(Expression* expr) {
                 collectFromExpression(std::get<ExprPtr>(part).get());
             }
         }
+    }
+    else if (auto* spawn = dynamic_cast<SpawnExpr*>(expr)) {
+        collectFromExpression(spawn->operand.get());
+    }
+    else if (auto* await = dynamic_cast<AwaitExpr*>(expr)) {
+        collectFromExpression(await->operand.get());
     }
 }
 

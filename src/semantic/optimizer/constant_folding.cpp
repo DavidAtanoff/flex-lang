@@ -91,13 +91,19 @@ void ConstantFoldingPass::processStatement(StmtPtr& stmt) {
             }
         }
         for (auto& case_ : matchStmt->cases) {
-            if (case_.first) {
-                auto folded = foldExpression(case_.first);
+            if (case_.pattern) {
+                auto folded = foldExpression(case_.pattern);
                 if (folded) {
-                    case_.first = std::move(folded);
+                    case_.pattern = std::move(folded);
                 }
             }
-            processStatement(case_.second);
+            if (case_.guard) {
+                auto folded = foldExpression(case_.guard);
+                if (folded) {
+                    case_.guard = std::move(folded);
+                }
+            }
+            processStatement(case_.body);
         }
         processStatement(matchStmt->defaultCase);
     }

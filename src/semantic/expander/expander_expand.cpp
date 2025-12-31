@@ -61,9 +61,10 @@ void MacroExpander::expandStatement(StmtPtr& stmt) {
     }
     else if (auto* matchStmt = dynamic_cast<MatchStmt*>(stmt.get())) {
         expandExpression(matchStmt->value);
-        for (auto& [pattern, body] : matchStmt->cases) {
-            expandExpression(pattern);
-            expandStatement(body);
+        for (auto& case_ : matchStmt->cases) {
+            expandExpression(case_.pattern);
+            if (case_.guard) expandExpression(case_.guard);
+            expandStatement(case_.body);
         }
         if (matchStmt->defaultCase) expandStatement(matchStmt->defaultCase);
     }

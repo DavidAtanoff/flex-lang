@@ -813,10 +813,11 @@ StmtPtr InliningPass::cloneStatement(Statement* stmt, const std::map<std::string
             matchStmt->location
         );
         for (auto& c : matchStmt->cases) {
-            newMatch->cases.push_back({
-                cloneExpression(c.first.get(), argMap),
-                cloneStatement(c.second.get(), argMap)
-            });
+            newMatch->cases.emplace_back(
+                cloneExpression(c.pattern.get(), argMap),
+                c.guard ? cloneExpression(c.guard.get(), argMap) : nullptr,
+                cloneStatement(c.body.get(), argMap)
+            );
         }
         newMatch->defaultCase = cloneStatement(matchStmt->defaultCase.get(), argMap);
         return newMatch;

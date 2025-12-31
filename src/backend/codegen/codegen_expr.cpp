@@ -606,7 +606,8 @@ void NativeCodeGen::visit(IndexExpr& node) {
 
 void NativeCodeGen::visit(ListExpr& node) {
     if (node.elements.empty()) {
-        asm_.xor_rax_rax();
+        // Empty list - allocate minimal GC list
+        emitGCAllocList(4);  // Start with capacity 4
         return;
     }
     
@@ -623,6 +624,8 @@ void NativeCodeGen::visit(ListExpr& node) {
     }
     
     if (allConstant) {
+        // For constant lists, we can still use static data
+        // but wrap it in a GC-compatible structure
         std::vector<uint8_t> data;
         for (int64_t val : values) {
             for (int i = 0; i < 8; i++) {
@@ -632,7 +635,40 @@ void NativeCodeGen::visit(ListExpr& node) {
         uint32_t rva = pe_.addData(data.data(), data.size());
         asm_.lea_rax_rip_fixup(rva);
     } else {
-        asm_.xor_rax_rax();
+        // Dynamic list - allocate via GC
+        size_t capacity = node.elements.size();
+        if (capacity < 4) capacity = 4;  // Minimum capacity
+        
+        emitGCAllocList(capacity);
+        
+        // Save list pointer
+        allocLocal("$list_ptr");
+        asm_.mov_mem_rbp_rax(locals["$list_ptr"]);
+        
+        // Set count
+        asm_.mov_rcx_imm64(static_cast<int64_t>(node.elements.size()));
+        asm_.mov_rax_mem_rbp(locals["$list_ptr"]);
+        // mov [rax], rcx  (count at offset 0)
+        asm_.code.push_back(0x48);
+        asm_.code.push_back(0x89);
+        asm_.code.push_back(0x08);
+        
+        // Store each element
+        for (size_t i = 0; i < node.elements.size(); i++) {
+            // Evaluate element
+            node.elements[i]->accept(*this);
+            
+            // Load list pointer
+            asm_.mov_rcx_mem_rbp(locals["$list_ptr"]);
+            
+            // Store at [rcx + 16 + i*8] (skip count and capacity)
+            int32_t offset = 16 + static_cast<int32_t>(i * 8);
+            asm_.add_rcx_imm32(offset);
+            asm_.mov_mem_rcx_rax();
+        }
+        
+        // Return list pointer
+        asm_.mov_rax_mem_rbp(locals["$list_ptr"]);
     }
 }
 
@@ -642,21 +678,13 @@ void NativeCodeGen::visit(RecordExpr& node) {
         return;
     }
     
-    // Allocate space on heap for the record
-    size_t size = node.fields.size() * 8;
+    // Allocate space for the record using GC
+    size_t fieldCount = node.fields.size();
     
-    if (!stackAllocated_) asm_.sub_rsp_imm32(0x28);
-    asm_.call_mem_rip(pe_.getImportRVA("GetProcessHeap"));
+    // Use GC allocation for records
+    emitGCAllocRecord(fieldCount);
     
-    asm_.mov_rcx_rax();
-    asm_.xor_rax_rax();
-    asm_.mov_rdx_rax();
-    asm_.mov_r8d_imm32((int32_t)size);
-    
-    asm_.call_mem_rip(pe_.getImportRVA("HeapAlloc"));
-    if (!stackAllocated_) asm_.add_rsp_imm32(0x28);
-    
-    // Save record pointer on stack (don't use rdi - it's for stdout caching)
+    // Save record pointer on stack
     allocLocal("$record_ptr");
     asm_.mov_mem_rbp_rax(locals["$record_ptr"]);
     
@@ -667,9 +695,11 @@ void NativeCodeGen::visit(RecordExpr& node) {
         // Load record pointer
         asm_.mov_rcx_mem_rbp(locals["$record_ptr"]);
         
-        // Store in record memory: [rcx + i*8] = rax
-        if (i > 0) {
-            asm_.add_rcx_imm32((int32_t)(i * 8));
+        // Store in record memory: [rcx + 8 + i*8] = rax
+        // (skip the fieldCount header at offset 0)
+        int32_t offset = 8 + static_cast<int32_t>(i * 8);
+        if (offset > 0) {
+            asm_.add_rcx_imm32(offset);
         }
         asm_.mov_mem_rcx_rax();
     }
@@ -790,6 +820,31 @@ void NativeCodeGen::visit(LambdaExpr& node) {
     std::string lambdaLabel = newLabel("lambda");
     std::string afterLambda = newLabel("after_lambda");
     
+    // Collect captured variables: variables used in body but not defined as parameters
+    std::set<std::string> paramNames;
+    for (const auto& param : node.params) {
+        paramNames.insert(param.first);
+    }
+    
+    // Find all identifiers used in the lambda body
+    std::vector<std::string> capturedVars;
+    std::set<std::string> capturedSet;
+    collectCapturedVariables(node.body.get(), paramNames, capturedSet);
+    
+    // Filter to only variables that exist in outer scope (locals, registers, or globals)
+    for (const auto& varName : capturedSet) {
+        bool inOuterScope = locals.count(varName) > 0 ||
+                           varRegisters_.count(varName) > 0 ||
+                           globalVarRegisters_.count(varName) > 0 ||
+                           constVars.count(varName) > 0 ||
+                           constFloatVars.count(varName) > 0;
+        if (inOuterScope) {
+            capturedVars.push_back(varName);
+        }
+    }
+    
+    bool hasCaptures = !capturedVars.empty();
+    
     // Jump over the lambda body (we'll call it later)
     asm_.jmp_rel32(afterLambda);
     
@@ -813,20 +868,47 @@ void NativeCodeGen::visit(LambdaExpr& node) {
     asm_.push_rbp();
     asm_.mov_rbp_rsp();
     
-    // Allocate minimal stack space
-    functionStackSize_ = 0x40;
+    // Allocate stack space
+    functionStackSize_ = 0x40 + (hasCaptures ? (int32_t)(capturedVars.size() * 8 + 8) : 0);
     asm_.sub_rsp_imm32(functionStackSize_);
     stackAllocated_ = true;
     
-    // Store parameters (Windows x64: rcx, rdx, r8, r9)
-    for (size_t i = 0; i < node.params.size() && i < 4; i++) {
+    // ALL lambdas use the closure calling convention:
+    // First parameter (rcx) is the closure/self pointer (may be unused)
+    // Actual parameters are shifted: rdx, r8, r9, then stack
+    
+    if (hasCaptures) {
+        // Save closure pointer
+        allocLocal("$closure_ptr");
+        asm_.mov_mem_rbp_rcx(locals["$closure_ptr"]);
+        
+        // Load captured variables from closure into local slots
+        // Closure layout: [fnPtr:8][captureCount:8][captures:N*8]
+        for (size_t i = 0; i < capturedVars.size(); i++) {
+            const std::string& varName = capturedVars[i];
+            allocLocal(varName);
+            int32_t off = locals[varName];
+            
+            // Load closure pointer
+            asm_.mov_rax_mem_rbp(locals["$closure_ptr"]);
+            // Load captured value: [rax + 16 + i*8]
+            int32_t captureOffset = 16 + static_cast<int32_t>(i * 8);
+            asm_.add_rax_imm32(captureOffset);
+            asm_.mov_rax_mem_rax();
+            // Store to local
+            asm_.mov_mem_rbp_rax(off);
+        }
+    }
+    // Note: rcx (closure pointer) is ignored if no captures
+    
+    // Store parameters (shifted: rdx, r8, r9, stack)
+    for (size_t i = 0; i < node.params.size() && i < 3; i++) {
         const std::string& paramName = node.params[i].first;
         allocLocal(paramName);
         int32_t off = locals[paramName];
         
         switch (i) {
-            case 0: asm_.mov_mem_rbp_rcx(off); break;
-            case 1:
+            case 0:  // rdx -> first param
                 asm_.code.push_back(0x48); asm_.code.push_back(0x89);
                 asm_.code.push_back(0x95);
                 asm_.code.push_back(off & 0xFF);
@@ -834,7 +916,7 @@ void NativeCodeGen::visit(LambdaExpr& node) {
                 asm_.code.push_back((off >> 16) & 0xFF);
                 asm_.code.push_back((off >> 24) & 0xFF);
                 break;
-            case 2:
+            case 1:  // r8 -> second param
                 asm_.code.push_back(0x4C); asm_.code.push_back(0x89);
                 asm_.code.push_back(0x85);
                 asm_.code.push_back(off & 0xFF);
@@ -842,7 +924,7 @@ void NativeCodeGen::visit(LambdaExpr& node) {
                 asm_.code.push_back((off >> 16) & 0xFF);
                 asm_.code.push_back((off >> 24) & 0xFF);
                 break;
-            case 3:
+            case 2:  // r9 -> third param
                 asm_.code.push_back(0x4C); asm_.code.push_back(0x89);
                 asm_.code.push_back(0x8D);
                 asm_.code.push_back(off & 0xFF);
@@ -869,12 +951,88 @@ void NativeCodeGen::visit(LambdaExpr& node) {
     stackAllocated_ = savedStackAllocated;
     varRegisters_ = savedVarRegisters;
     
-    // After lambda: load the lambda's address into rax
+    // After lambda: create closure object
+    // ALL lambdas return a closure pointer for uniform calling convention
     asm_.label(afterLambda);
     
-    // lea rax, [rip + lambdaLabel]
-    asm_.code.push_back(0x48); asm_.code.push_back(0x8D); asm_.code.push_back(0x05);
+    // Allocate closure via GC (even for lambdas without captures)
+    emitGCAllocClosure(capturedVars.size());
+    
+    // Save closure pointer
+    asm_.push_rax();
+    
+    // Store function pointer at [closure + 0]
+    // lea rcx, [rip + lambdaLabel]
+    asm_.code.push_back(0x48); asm_.code.push_back(0x8D); asm_.code.push_back(0x0D);
     asm_.fixupLabel(lambdaLabel);
+    // mov [rax], rcx
+    asm_.code.push_back(0x48);
+    asm_.code.push_back(0x89);
+    asm_.code.push_back(0x08);
+    
+    // Store captured values at [closure + 16 + i*8]
+    for (size_t i = 0; i < capturedVars.size(); i++) {
+        const std::string& varName = capturedVars[i];
+        
+        // Load the captured variable's current value
+        auto regIt = varRegisters_.find(varName);
+        auto globalRegIt = globalVarRegisters_.find(varName);
+        auto localIt = locals.find(varName);
+        auto constIt = constVars.find(varName);
+        auto constFloatIt = constFloatVars.find(varName);
+        
+        if (constIt != constVars.end()) {
+            // Constant integer
+            asm_.mov_rcx_imm64(constIt->second);
+        } else if (constFloatIt != constFloatVars.end()) {
+            // Constant float
+            union { double d; int64_t i; } u;
+            u.d = constFloatIt->second;
+            asm_.mov_rcx_imm64(u.i);
+        } else if (regIt != varRegisters_.end() && regIt->second != VarRegister::NONE) {
+            // Variable in function-local register
+            switch (regIt->second) {
+                case VarRegister::RBX: asm_.mov_rcx_rbx(); break;
+                case VarRegister::R12: asm_.mov_rcx_r12(); break;
+                case VarRegister::R13: asm_.mov_rcx_r13(); break;
+                case VarRegister::R14: asm_.mov_rcx_r14(); break;
+                case VarRegister::R15: asm_.mov_rcx_r15(); break;
+                default: asm_.xor_ecx_ecx(); break;
+            }
+        } else if (globalRegIt != globalVarRegisters_.end() && globalRegIt->second != VarRegister::NONE) {
+            // Variable in global register
+            switch (globalRegIt->second) {
+                case VarRegister::RBX: asm_.mov_rcx_rbx(); break;
+                case VarRegister::R12: asm_.mov_rcx_r12(); break;
+                case VarRegister::R13: asm_.mov_rcx_r13(); break;
+                case VarRegister::R14: asm_.mov_rcx_r14(); break;
+                case VarRegister::R15: asm_.mov_rcx_r15(); break;
+                default: asm_.xor_ecx_ecx(); break;
+            }
+        } else if (localIt != locals.end()) {
+            // Variable on stack
+            asm_.mov_rcx_mem_rbp(localIt->second);
+        } else {
+            // Unknown variable - use 0
+            asm_.xor_ecx_ecx();
+        }
+        
+        // Store to closure: [rax + 16 + i*8] = rcx
+        // First reload closure pointer from stack
+        // mov rax, [rsp]
+        asm_.code.push_back(0x48); asm_.code.push_back(0x8B);
+        asm_.code.push_back(0x04); asm_.code.push_back(0x24);
+        
+        int32_t captureOffset = 16 + static_cast<int32_t>(i * 8);
+        // mov [rax + offset], rcx
+        asm_.code.push_back(0x48);
+        asm_.code.push_back(0x89);
+        asm_.code.push_back(0x48);
+        asm_.code.push_back(static_cast<uint8_t>(captureOffset));
+    }
+    
+    // Return closure pointer
+    asm_.pop_rax();
     
     lastExprWasFloat_ = false;
 }
@@ -1224,51 +1382,94 @@ void NativeCodeGen::visit(SpawnExpr& node) {
         if (auto* ident = dynamic_cast<Identifier*>(call->callee.get())) {
             // Check if this is a known function
             if (asm_.labels.count(ident->name)) {
-                // For functions with no arguments, we can spawn directly
-                // CreateThread(NULL, 0, lpStartAddress, lpParameter, 0, NULL)
+                // CreateThread expects: DWORD WINAPI ThreadProc(LPVOID lpParameter)
+                // We create a thunk that:
+                // 1. Sets up proper stack frame
+                // 2. Initializes RDI with stdout handle (for println support)
+                // 3. Calls the target function with the argument (if any)
                 
-                if (call->args.empty()) {
-                    // Get function address into r8 directly
-                    // lea r8, [rip + function_label]
-                    asm_.code.push_back(0x4C); asm_.code.push_back(0x8D); asm_.code.push_back(0x05);
-                    asm_.fixupLabel(ident->name);
-                    
-                    // CreateThread params:
-                    // rcx = lpThreadAttributes (NULL)
-                    // rdx = dwStackSize (0 = default)
-                    // r8 = lpStartAddress (function pointer) - already set
-                    // r9 = lpParameter (NULL for no-arg functions)
-                    // [rsp+0x20] = dwCreationFlags (0)
-                    // [rsp+0x28] = lpThreadId (NULL)
-                    
-                    asm_.xor_rax_rax();
-                    asm_.mov_rcx_rax();  // lpThreadAttributes = NULL
-                    asm_.mov_rdx_rax();  // dwStackSize = 0
-                    // r8 already has function address
-                    // mov r9, 0 (lpParameter = NULL)
-                    asm_.code.push_back(0x4D); asm_.code.push_back(0x31); asm_.code.push_back(0xC9);
-                    
-                    // [rsp+0x20] = 0 (dwCreationFlags)
-                    // mov [rsp+0x20], rax
-                    asm_.code.push_back(0x48); asm_.code.push_back(0x89);
-                    asm_.code.push_back(0x44); asm_.code.push_back(0x24); asm_.code.push_back(0x20);
-                    
-                    // [rsp+0x28] = NULL (lpThreadId)
-                    // mov [rsp+0x28], rax
-                    asm_.code.push_back(0x48); asm_.code.push_back(0x89);
-                    asm_.code.push_back(0x44); asm_.code.push_back(0x24); asm_.code.push_back(0x28);
-                    
-                    if (!stackAllocated_) asm_.sub_rsp_imm32(0x30);
-                    asm_.call_mem_rip(pe_.getImportRVA("CreateThread"));
-                    if (!stackAllocated_) asm_.add_rsp_imm32(0x30);
-                    
-                    // rax now contains the thread handle
-                    return;
+                std::string thunkLabel = newLabel("spawn_thunk_" + ident->name);
+                std::string afterThunk = newLabel("spawn_after_thunk");
+                
+                // Jump over the thunk code
+                asm_.jmp_rel32(afterThunk);
+                
+                // Emit the thunk - this runs in the new thread
+                asm_.label(thunkLabel);
+                
+                // Standard prologue
+                asm_.push_rbp();
+                asm_.mov_rbp_rsp();
+                asm_.push_rdi();  // Save RDI (callee-saved)
+                asm_.sub_rsp_imm32(0x30);  // Shadow space + alignment
+                
+                // Save lpParameter (rcx) if we have an argument
+                if (call->args.size() == 1) {
+                    asm_.mov_mem_rbp_rcx(-0x10);  // Save arg at [rbp-0x10]
                 }
                 
-                // For functions with arguments, we need to package them
-                // For now, fall back to synchronous execution for functions with args
-                // A full implementation would allocate a struct with function ptr + args
+                // Initialize stdout handle in RDI for this thread
+                // GetStdHandle(STD_OUTPUT_HANDLE)
+                asm_.mov_ecx_imm32(-11);  // STD_OUTPUT_HANDLE
+                asm_.call_mem_rip(pe_.getImportRVA("GetStdHandle"));
+                asm_.mov_rdi_rax();  // Cache in RDI
+                
+                // Restore argument to rcx if needed
+                if (call->args.size() == 1) {
+                    asm_.mov_rcx_mem_rbp(-0x10);
+                }
+                
+                // Call the actual function
+                asm_.call_rel32(ident->name);
+                
+                // Epilogue
+                asm_.add_rsp_imm32(0x30);
+                asm_.pop_rdi();
+                asm_.pop_rbp();
+                asm_.ret();
+                
+                asm_.label(afterThunk);
+                
+                // Evaluate argument if present and store for lpParameter
+                if (call->args.size() == 1) {
+                    call->args[0]->accept(*this);
+                    // mov r9, rax (lpParameter = argument value)
+                    asm_.code.push_back(0x49); asm_.code.push_back(0x89); asm_.code.push_back(0xC1);
+                } else {
+                    // mov r9, 0 (lpParameter = NULL)
+                    asm_.code.push_back(0x4D); asm_.code.push_back(0x31); asm_.code.push_back(0xC9);
+                }
+                
+                // lea r8, [rip + thunkLabel]
+                asm_.code.push_back(0x4C); asm_.code.push_back(0x8D); asm_.code.push_back(0x05);
+                asm_.fixupLabel(thunkLabel);
+                
+                // CreateThread params:
+                // rcx = lpThreadAttributes (NULL)
+                // rdx = dwStackSize (0 = default)
+                // r8 = lpStartAddress (thunk pointer)
+                // r9 = lpParameter (argument or NULL)
+                // [rsp+0x20] = dwCreationFlags (0)
+                // [rsp+0x28] = lpThreadId (NULL)
+                
+                asm_.xor_rax_rax();
+                asm_.mov_rcx_rax();  // lpThreadAttributes = NULL
+                asm_.mov_rdx_rax();  // dwStackSize = 0
+                
+                // [rsp+0x20] = 0 (dwCreationFlags)
+                asm_.code.push_back(0x48); asm_.code.push_back(0x89);
+                asm_.code.push_back(0x44); asm_.code.push_back(0x24); asm_.code.push_back(0x20);
+                
+                // [rsp+0x28] = NULL (lpThreadId)
+                asm_.code.push_back(0x48); asm_.code.push_back(0x89);
+                asm_.code.push_back(0x44); asm_.code.push_back(0x24); asm_.code.push_back(0x28);
+                
+                if (!stackAllocated_) asm_.sub_rsp_imm32(0x30);
+                asm_.call_mem_rip(pe_.getImportRVA("CreateThread"));
+                if (!stackAllocated_) asm_.add_rsp_imm32(0x30);
+                
+                // rax now contains the thread handle
+                return;
             }
         }
     }

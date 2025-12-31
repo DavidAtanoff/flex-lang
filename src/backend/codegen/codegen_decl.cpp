@@ -252,6 +252,171 @@ void NativeCodeGen::emitMoveParamToVar(int paramIndex, const std::string& name) 
     }
 }
 
+// Collect captured variables from an expression
+// Finds all identifiers that are not in the params set
+void NativeCodeGen::collectCapturedVariables(Expression* expr, const std::set<std::string>& params, std::set<std::string>& captured) {
+    if (!expr) return;
+    
+    if (auto* id = dynamic_cast<Identifier*>(expr)) {
+        // If this identifier is not a parameter and not a function label, it's captured
+        if (params.find(id->name) == params.end() && asm_.labels.find(id->name) == asm_.labels.end()) {
+            captured.insert(id->name);
+        }
+        return;
+    }
+    
+    if (auto* binary = dynamic_cast<BinaryExpr*>(expr)) {
+        collectCapturedVariables(binary->left.get(), params, captured);
+        collectCapturedVariables(binary->right.get(), params, captured);
+        return;
+    }
+    
+    if (auto* unary = dynamic_cast<UnaryExpr*>(expr)) {
+        collectCapturedVariables(unary->operand.get(), params, captured);
+        return;
+    }
+    
+    if (auto* ternary = dynamic_cast<TernaryExpr*>(expr)) {
+        collectCapturedVariables(ternary->condition.get(), params, captured);
+        collectCapturedVariables(ternary->thenExpr.get(), params, captured);
+        collectCapturedVariables(ternary->elseExpr.get(), params, captured);
+        return;
+    }
+    
+    if (auto* call = dynamic_cast<CallExpr*>(expr)) {
+        collectCapturedVariables(call->callee.get(), params, captured);
+        for (auto& arg : call->args) {
+            collectCapturedVariables(arg.get(), params, captured);
+        }
+        return;
+    }
+    
+    if (auto* index = dynamic_cast<IndexExpr*>(expr)) {
+        collectCapturedVariables(index->object.get(), params, captured);
+        collectCapturedVariables(index->index.get(), params, captured);
+        return;
+    }
+    
+    if (auto* member = dynamic_cast<MemberExpr*>(expr)) {
+        collectCapturedVariables(member->object.get(), params, captured);
+        return;
+    }
+    
+    if (auto* list = dynamic_cast<ListExpr*>(expr)) {
+        for (auto& elem : list->elements) {
+            collectCapturedVariables(elem.get(), params, captured);
+        }
+        return;
+    }
+    
+    if (auto* record = dynamic_cast<RecordExpr*>(expr)) {
+        for (auto& field : record->fields) {
+            collectCapturedVariables(field.second.get(), params, captured);
+        }
+        return;
+    }
+    
+    if (auto* assign = dynamic_cast<AssignExpr*>(expr)) {
+        collectCapturedVariables(assign->target.get(), params, captured);
+        collectCapturedVariables(assign->value.get(), params, captured);
+        return;
+    }
+    
+    if (auto* lambda = dynamic_cast<LambdaExpr*>(expr)) {
+        // For nested lambdas, add their params to the exclusion set
+        std::set<std::string> nestedParams = params;
+        for (const auto& param : lambda->params) {
+            nestedParams.insert(param.first);
+        }
+        collectCapturedVariables(lambda->body.get(), nestedParams, captured);
+        return;
+    }
+    
+    if (auto* range = dynamic_cast<RangeExpr*>(expr)) {
+        collectCapturedVariables(range->start.get(), params, captured);
+        collectCapturedVariables(range->end.get(), params, captured);
+        if (range->step) collectCapturedVariables(range->step.get(), params, captured);
+        return;
+    }
+    
+    if (auto* listComp = dynamic_cast<ListCompExpr*>(expr)) {
+        // The loop variable is local to the comprehension
+        std::set<std::string> compParams = params;
+        compParams.insert(listComp->var);
+        collectCapturedVariables(listComp->expr.get(), compParams, captured);
+        collectCapturedVariables(listComp->iterable.get(), params, captured);
+        if (listComp->condition) collectCapturedVariables(listComp->condition.get(), compParams, captured);
+        return;
+    }
+    
+    // Literals and other expressions don't capture anything
+}
+
+// Collect captured variables from a statement
+void NativeCodeGen::collectCapturedVariablesStmt(Statement* stmt, const std::set<std::string>& params, std::set<std::string>& captured) {
+    if (!stmt) return;
+    
+    if (auto* block = dynamic_cast<Block*>(stmt)) {
+        std::set<std::string> blockParams = params;
+        for (auto& s : block->statements) {
+            // Add any variable declarations to the local scope
+            if (auto* varDecl = dynamic_cast<VarDecl*>(s.get())) {
+                collectCapturedVariables(varDecl->initializer.get(), blockParams, captured);
+                blockParams.insert(varDecl->name);
+            } else {
+                collectCapturedVariablesStmt(s.get(), blockParams, captured);
+            }
+        }
+        return;
+    }
+    
+    if (auto* exprStmt = dynamic_cast<ExprStmt*>(stmt)) {
+        collectCapturedVariables(exprStmt->expr.get(), params, captured);
+        return;
+    }
+    
+    if (auto* varDecl = dynamic_cast<VarDecl*>(stmt)) {
+        collectCapturedVariables(varDecl->initializer.get(), params, captured);
+        return;
+    }
+    
+    if (auto* assignStmt = dynamic_cast<AssignStmt*>(stmt)) {
+        collectCapturedVariables(assignStmt->target.get(), params, captured);
+        collectCapturedVariables(assignStmt->value.get(), params, captured);
+        return;
+    }
+    
+    if (auto* ifStmt = dynamic_cast<IfStmt*>(stmt)) {
+        collectCapturedVariables(ifStmt->condition.get(), params, captured);
+        collectCapturedVariablesStmt(ifStmt->thenBranch.get(), params, captured);
+        for (auto& elif : ifStmt->elifBranches) {
+            collectCapturedVariables(elif.first.get(), params, captured);
+            collectCapturedVariablesStmt(elif.second.get(), params, captured);
+        }
+        collectCapturedVariablesStmt(ifStmt->elseBranch.get(), params, captured);
+        return;
+    }
+    
+    if (auto* whileStmt = dynamic_cast<WhileStmt*>(stmt)) {
+        collectCapturedVariables(whileStmt->condition.get(), params, captured);
+        collectCapturedVariablesStmt(whileStmt->body.get(), params, captured);
+        return;
+    }
+    
+    if (auto* forStmt = dynamic_cast<ForStmt*>(stmt)) {
+        collectCapturedVariables(forStmt->iterable.get(), params, captured);
+        std::set<std::string> forParams = params;
+        forParams.insert(forStmt->var);
+        collectCapturedVariablesStmt(forStmt->body.get(), forParams, captured);
+        return;
+    }
+    
+    if (auto* returnStmt = dynamic_cast<ReturnStmt*>(stmt)) {
+        collectCapturedVariables(returnStmt->value.get(), params, captured);
+        return;
+    }
+}
+
 // Helper to collect nested functions from a statement
 void collectNestedFunctions(Statement* stmt, std::vector<FnDecl*>& nested) {
     if (!stmt) return;

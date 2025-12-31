@@ -7,6 +7,7 @@
 #include "backend/x64/pe_generator.h"
 #include "backend/codegen/register_allocator.h"
 #include "backend/codegen/global_register_allocator.h"
+#include "backend/gc/gc.h"
 #include <map>
 #include <set>
 
@@ -150,6 +151,10 @@ private:
     bool statementHasCall(Statement* stmt);               // Check if statement contains a call
     bool expressionHasCall(Expression* expr);             // Check if expression contains a call
     
+    // Closure capture analysis
+    void collectCapturedVariables(Expression* expr, const std::set<std::string>& params, std::set<std::string>& captured);
+    void collectCapturedVariablesStmt(Statement* stmt, const std::set<std::string>& params, std::set<std::string>& captured);
+    
     // Module support
     std::string currentModule_;                           // Current module name (empty if top-level)
     std::map<std::string, std::vector<std::string>> moduleFunctions_;  // Module -> function names
@@ -170,6 +175,20 @@ private:
     std::map<std::string, TraitInfo> traits_;             // Trait name -> info
     std::map<std::string, ImplInfo> impls_;               // "trait:type" -> impl info
     std::map<std::string, uint32_t> vtables_;             // "trait:type" -> vtable RVA
+    
+    // Garbage collection support
+    bool useGC_ = true;                                    // Enable GC for allocations
+    bool gcInitEmitted_ = false;                           // Whether GC init code has been emitted
+    
+    // GC helper methods
+    void emitGCInit();                                     // Emit GC initialization at program start
+    void emitGCShutdown();                                 // Emit GC shutdown at program end
+    void emitGCAlloc(size_t size, GCObjectType type);      // Emit GC allocation call
+    void emitGCAllocList(size_t capacity);                 // Emit list allocation via GC
+    void emitGCAllocRecord(size_t fieldCount);             // Emit record allocation via GC
+    void emitGCAllocClosure(size_t captureCount);          // Emit closure allocation via GC
+    void emitGCPushFrame();                                // Emit stack frame push for GC
+    void emitGCPopFrame();                                 // Emit stack frame pop for GC
     
     void visit(IntegerLiteral& node) override;
     void visit(FloatLiteral& node) override;

@@ -156,7 +156,14 @@ void ASTPrinter::visit(ForStmt& n) {
 void ASTPrinter::visit(MatchStmt& n) {
     print("MatchStmt");
     indent++; n.value->accept(*this);
-    for (auto& [pat, body] : n.cases) { pat->accept(*this); body->accept(*this); }
+    for (auto& case_ : n.cases) { 
+        case_.pattern->accept(*this); 
+        if (case_.guard) {
+            print("Guard:");
+            indent++; case_.guard->accept(*this); indent--;
+        }
+        case_.body->accept(*this); 
+    }
     indent--;
 }
 

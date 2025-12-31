@@ -237,11 +237,12 @@ StmtPtr MacroExpander::cloneStmt(Statement* stmt, const std::unordered_map<std::
     if (auto* matchStmt = dynamic_cast<MatchStmt*>(stmt)) {
         auto newMatch = std::make_unique<MatchStmt>(
             cloneExpr(matchStmt->value.get(), params), matchStmt->location);
-        for (auto& [pattern, body] : matchStmt->cases) {
-            newMatch->cases.push_back({
-                cloneExpr(pattern.get(), params),
-                cloneStmt(body.get(), params)
-            });
+        for (auto& case_ : matchStmt->cases) {
+            newMatch->cases.emplace_back(
+                cloneExpr(case_.pattern.get(), params),
+                case_.guard ? cloneExpr(case_.guard.get(), params) : nullptr,
+                cloneStmt(case_.body.get(), params)
+            );
         }
         if (matchStmt->defaultCase) {
             newMatch->defaultCase = cloneStmt(matchStmt->defaultCase.get(), params);

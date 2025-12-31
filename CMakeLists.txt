@@ -92,6 +92,8 @@ set(BACKEND_SOURCES
     src/backend/x64/peephole.cpp
     # Object file format
     src/backend/object/object_file.cpp
+    # Garbage collection
+    src/backend/gc/gc.cpp
     # Modular native codegen
     src/backend/codegen/codegen_core.cpp
     src/backend/codegen/codegen_builtins.cpp
@@ -99,6 +101,7 @@ set(BACKEND_SOURCES
     src/backend/codegen/codegen_stmt.cpp
     src/backend/codegen/codegen_decl.cpp
     src/backend/codegen/codegen_call.cpp
+    src/backend/codegen/codegen_gc.cpp
     src/backend/codegen/register_allocator.cpp
     src/backend/codegen/global_register_allocator.cpp
     src/backend/codegen/vectorizer.cpp
@@ -151,6 +154,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/backend/x64
     ${CMAKE_SOURCE_DIR}/src/backend/object
     ${CMAKE_SOURCE_DIR}/src/backend/runtime
+    ${CMAKE_SOURCE_DIR}/src/backend/gc
     ${CMAKE_SOURCE_DIR}/src/backend/codegen
     ${CMAKE_SOURCE_DIR}/src/backend/bytecode
     ${CMAKE_SOURCE_DIR}/src/backend/vm

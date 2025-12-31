@@ -110,6 +110,44 @@ void TypeChecker::registerBuiltins() {
     symbols_.define(Symbol("hour", SymbolKind::FUNCTION, std::make_shared<FunctionType>(*timeFn)));
     symbols_.define(Symbol("minute", SymbolKind::FUNCTION, std::make_shared<FunctionType>(*timeFn)));
     symbols_.define(Symbol("second", SymbolKind::FUNCTION, std::make_shared<FunctionType>(*timeFn)));
+    
+    // Result type functions
+    // Ok(value) -> Result (encoded as int with LSB=1)
+    auto okFn = std::make_shared<FunctionType>();
+    okFn->params.push_back({"value", reg.anyType()});
+    okFn->returnType = reg.intType();  // Result is encoded as int
+    symbols_.define(Symbol("Ok", SymbolKind::FUNCTION, okFn));
+    
+    // Err(value) -> Result (encoded as int with LSB=0)
+    auto errFn = std::make_shared<FunctionType>();
+    errFn->params.push_back({"value", reg.anyType()});
+    errFn->returnType = reg.intType();
+    symbols_.define(Symbol("Err", SymbolKind::FUNCTION, errFn));
+    
+    // is_ok(result) -> bool
+    auto isOkFn = std::make_shared<FunctionType>();
+    isOkFn->params.push_back({"result", reg.anyType()});
+    isOkFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_ok", SymbolKind::FUNCTION, isOkFn));
+    
+    // is_err(result) -> bool
+    auto isErrFn = std::make_shared<FunctionType>();
+    isErrFn->params.push_back({"result", reg.anyType()});
+    isErrFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_err", SymbolKind::FUNCTION, isErrFn));
+    
+    // unwrap(result) -> any (extracts value from Ok)
+    auto unwrapFn = std::make_shared<FunctionType>();
+    unwrapFn->params.push_back({"result", reg.anyType()});
+    unwrapFn->returnType = reg.anyType();
+    symbols_.define(Symbol("unwrap", SymbolKind::FUNCTION, unwrapFn));
+    
+    // unwrap_or(result, default) -> any
+    auto unwrapOrFn = std::make_shared<FunctionType>();
+    unwrapOrFn->params.push_back({"result", reg.anyType()});
+    unwrapOrFn->params.push_back({"default", reg.anyType()});
+    unwrapOrFn->returnType = reg.anyType();
+    symbols_.define(Symbol("unwrap_or", SymbolKind::FUNCTION, unwrapOrFn));
 }
 
 bool TypeChecker::check(Program& program) {

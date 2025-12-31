@@ -68,15 +68,21 @@ void TypeChecker::visit(MatchStmt& node) {
     inferType(node.value.get());
     for (auto& c : node.cases) {
         // Check if pattern is the wildcard '_' - don't try to infer its type
-        if (auto* ident = dynamic_cast<Identifier*>(c.first.get())) {
+        if (auto* ident = dynamic_cast<Identifier*>(c.pattern.get())) {
             if (ident->name == "_") {
-                // Wildcard pattern - skip type inference, just check the body
-                c.second->accept(*this);
+                // Wildcard pattern - skip type inference, check guard and body
+                if (c.guard) inferType(c.guard.get());
+                c.body->accept(*this);
                 continue;
             }
+            // Variable binding pattern - define the variable in scope
+            if (ident->name.length() > 0 && std::islower(ident->name[0])) {
+                symbols_.define(Symbol(ident->name, SymbolKind::VARIABLE, getType(node.value.get())));
+            }
         }
-        inferType(c.first.get());
-        c.second->accept(*this);
+        inferType(c.pattern.get());
+        if (c.guard) inferType(c.guard.get());
+        c.body->accept(*this);
     }
     if (node.defaultCase) node.defaultCase->accept(*this);
 }

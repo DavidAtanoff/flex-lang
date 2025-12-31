@@ -64,6 +64,7 @@ void X64Assembler::mov_rax_mem_rax() { emit8(0x48); emit8(0x8B); emit8(0x00); }
 void X64Assembler::mov_mem_rcx_rax() { emit8(0x48); emit8(0x89); emit8(0x01); }
 void X64Assembler::mov_mem_rax_rcx() { emit8(0x48); emit8(0x89); emit8(0x08); }
 void X64Assembler::mov_rcx_mem_rax() { emit8(0x48); emit8(0x8B); emit8(0x08); }
+void X64Assembler::mov_rax_mem_rcx() { emit8(0x48); emit8(0x8B); emit8(0x01); }  // mov rax, [rcx]
 void X64Assembler::lea_rcx_rip_fixup(uint32_t targetRVA) { emit8(0x48); emit8(0x8D); emit8(0x0D); fixupRIP(targetRVA); }
 void X64Assembler::lea_rax_rip_fixup(uint32_t targetRVA) { emit8(0x48); emit8(0x8D); emit8(0x05); fixupRIP(targetRVA); }
 void X64Assembler::lea_rax_rbp(int32_t offset) { emit8(0x48); emit8(0x8D); emit8(0x85); emit32(offset); }
@@ -176,6 +177,13 @@ void X64Assembler::mov_r15_r8() { emit8(0x4D); emit8(0x89); emit8(0xC7); }   // 
 void X64Assembler::mov_r15_r9() { emit8(0x4D); emit8(0x89); emit8(0xCF); }   // mov r15, r9
 void X64Assembler::mov_r15_imm64(int64_t val) { emit8(0x49); emit8(0xBF); emit64(val); }
 void X64Assembler::xor_r15_r15() { emit8(0x4D); emit8(0x31); emit8(0xFF); }
+
+// Move from callee-saved to RCX (for closure captures)
+void X64Assembler::mov_rcx_rbx() { emit8(0x48); emit8(0x89); emit8(0xD9); }  // mov rcx, rbx
+void X64Assembler::mov_rcx_r12() { emit8(0x4C); emit8(0x89); emit8(0xE1); }  // mov rcx, r12
+void X64Assembler::mov_rcx_r13() { emit8(0x4C); emit8(0x89); emit8(0xE9); }  // mov rcx, r13
+void X64Assembler::mov_rcx_r14() { emit8(0x4C); emit8(0x89); emit8(0xF1); }  // mov rcx, r14
+void X64Assembler::mov_rcx_r15() { emit8(0x4C); emit8(0x89); emit8(0xF9); }  // mov rcx, r15
 
 void X64Assembler::jmp_rel32(const std::string& lbl) { emit8(0xE9); fixupLabel(lbl); }
 void X64Assembler::jz_rel32(const std::string& lbl) { emit8(0x0F); emit8(0x84); fixupLabel(lbl); }

@@ -39,3 +39,6 @@ desktop.ini
 
 # Test outputs
 examples/*.exe
+
+# Implementation notes
+implementation.md
