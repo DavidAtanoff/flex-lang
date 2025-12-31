@@ -1,0 +1,642 @@
+// Flex Compiler - Parser Declaration Implementations
+// Handles: fn, record, enum, trait, impl, use, import, extern, macro, syntax, layer, unsafe, var
+
+#include "parser_base.h"
+#include "common/errors.h"
+
+namespace flex {
+
+StmtPtr Parser::declaration() {
+    skipNewlines();
+    
+    bool isPublic = match(TokenType::PUB);
+    bool isPrivate = !isPublic && match(TokenType::PRIV);
+    bool isAsync = match(TokenType::ASYNC);
+    
+    if (match(TokenType::FN)) {
+        auto fn = fnDeclaration();
+        auto* fnDecl = static_cast<FnDecl*>(fn.get());
+        if (isAsync) fnDecl->isAsync = true;
+        fnDecl->isPublic = isPublic;
+        return fn;
+    }
+    if (match(TokenType::RECORD)) {
+        auto rec = recordDeclaration();
+        static_cast<RecordDecl*>(rec.get())->isPublic = isPublic;
+        return rec;
+    }
+    if (match(TokenType::ENUM)) return enumDeclaration();
+    if (match(TokenType::TYPE)) return typeAliasDeclaration();
+    if (match(TokenType::TRAIT)) return traitDeclaration();
+    if (match(TokenType::IMPL)) return implDeclaration();
+    if (match(TokenType::USE)) return useStatement();
+    if (match(TokenType::IMPORT)) return importStatement();
+    if (match(TokenType::MODULE)) return moduleDeclaration();
+    if (match(TokenType::EXTERN)) return externDeclaration();
+    if (match(TokenType::MACRO)) return macroDeclaration();
+    if (match(TokenType::SYNTAX)) return syntaxMacroDeclaration();
+    if (match(TokenType::LAYER)) return layerDeclaration();
+    if (match(TokenType::UNSAFE)) return unsafeBlock();
+    if (match({TokenType::LET, TokenType::MUT, TokenType::CONST})) return varDeclaration();
+    
+    (void)isPublic;
+    (void)isPrivate;
+    (void)isAsync;
+    return statement();
+}
+
+StmtPtr Parser::varDeclaration() {
+    auto loc = previous().location;
+    TokenType declType = previous().type;
+    
+    // Tuple destructuring: let (a, b) = expr
+    if (check(TokenType::LPAREN)) {
+        advance();
+        std::vector<std::string> names;
+        
+        if (!check(TokenType::RPAREN)) {
+            do {
+                names.push_back(consume(TokenType::IDENTIFIER, "Expected variable name in destructuring").lexeme);
+            } while (match(TokenType::COMMA));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after destructuring pattern");
+        consume(TokenType::ASSIGN, "Expected '=' after destructuring pattern");
+        auto init = expression();
+        match(TokenType::NEWLINE);
+        
+        auto decl = std::make_unique<DestructuringDecl>(
+            DestructuringDecl::Kind::TUPLE, std::move(names), std::move(init), loc);
+        decl->isMutable = (declType == TokenType::MUT);
+        return decl;
+    }
+    
+    // Record destructuring: let {x, y} = expr
+    if (check(TokenType::LBRACE)) {
+        advance();
+        std::vector<std::string> names;
+        
+        if (!check(TokenType::RBRACE)) {
+            do {
+                names.push_back(consume(TokenType::IDENTIFIER, "Expected field name in destructuring").lexeme);
+            } while (match(TokenType::COMMA));
+        }
+        
+        consume(TokenType::RBRACE, "Expected '}' after destructuring pattern");
+        consume(TokenType::ASSIGN, "Expected '=' after destructuring pattern");
+        auto init = expression();
+        match(TokenType::NEWLINE);
+        
+        auto decl = std::make_unique<DestructuringDecl>(
+            DestructuringDecl::Kind::RECORD, std::move(names), std::move(init), loc);
+        decl->isMutable = (declType == TokenType::MUT);
+        return decl;
+    }
+    
+    // Regular variable declaration
+    auto name = consume(TokenType::IDENTIFIER, "Expected variable name").lexeme;
+    
+    std::string typeName;
+    if (match(TokenType::COLON)) {
+        typeName = parseType();
+    }
+    
+    ExprPtr init = nullptr;
+    if (match(TokenType::ASSIGN)) {
+        init = expression();
+    }
+    
+    match(TokenType::NEWLINE);
+    
+    auto decl = std::make_unique<VarDecl>(name, typeName, std::move(init), loc);
+    decl->isMutable = (declType == TokenType::MUT);
+    decl->isConst = (declType == TokenType::CONST);
+    return decl;
+}
+
+StmtPtr Parser::fnDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected function name").lexeme;
+    
+    auto fn = std::make_unique<FnDecl>(name, loc);
+    
+    // Generic type parameters: fn name[T, U]
+    if (match(TokenType::LBRACKET)) {
+        do {
+            fn->typeParams.push_back(consume(TokenType::IDENTIFIER, "Expected type parameter").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACKET, "Expected ']' after type parameters");
+    }
+    
+    fn->params = parseParams();
+    
+    if (match(TokenType::ARROW)) {
+        fn->returnType = parseType();
+    }
+    
+    // Support : and => for function body
+    if (match(TokenType::DOUBLE_ARROW)) {
+        auto expr = expression();
+        auto ret = std::make_unique<ReturnStmt>(std::move(expr), loc);
+        auto blk = std::make_unique<Block>(loc);
+        blk->statements.push_back(std::move(ret));
+        fn->body = std::move(blk);
+        match(TokenType::NEWLINE);
+    } else if (match(TokenType::COLON)) {
+        match(TokenType::NEWLINE);
+        
+        if (check(TokenType::INDENT)) {
+            fn->body = block();
+        } else {
+            auto expr = expression();
+            auto ret = std::make_unique<ReturnStmt>(std::move(expr), loc);
+            auto blk = std::make_unique<Block>(loc);
+            blk->statements.push_back(std::move(ret));
+            fn->body = std::move(blk);
+            match(TokenType::NEWLINE);
+        }
+    } else if (match(TokenType::ASSIGN)) {
+        auto expr = expression();
+        auto ret = std::make_unique<ReturnStmt>(std::move(expr), loc);
+        auto blk = std::make_unique<Block>(loc);
+        blk->statements.push_back(std::move(ret));
+        fn->body = std::move(blk);
+        match(TokenType::NEWLINE);
+    } else {
+        auto diag = errors::expectedFunctionBody(peek().location);
+        throw FlexDiagnosticError(diag);
+    }
+    
+    return fn;
+}
+
+StmtPtr Parser::recordDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected record name").lexeme;
+    
+    auto rec = std::make_unique<RecordDecl>(name, loc);
+    
+    if (match(TokenType::LBRACKET)) {
+        do {
+            rec->typeParams.push_back(consume(TokenType::IDENTIFIER, "Expected type parameter").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACKET, "Expected ']' after type parameters");
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after record name");
+    match(TokenType::NEWLINE);
+    
+    consume(TokenType::INDENT, "Expected indented record fields");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        auto fieldName = consume(TokenType::IDENTIFIER, "Expected field name").lexeme;
+        std::string fieldType;
+        if (match(TokenType::COLON)) {
+            fieldType = parseType();
+        }
+        rec->fields.emplace_back(fieldName, fieldType);
+        match(TokenType::NEWLINE);
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of record");
+    return rec;
+}
+
+StmtPtr Parser::enumDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected enum name").lexeme;
+    
+    auto en = std::make_unique<EnumDecl>(name, loc);
+    
+    if (match(TokenType::LBRACKET)) {
+        do {
+            en->typeParams.push_back(consume(TokenType::IDENTIFIER, "Expected type parameter").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACKET, "Expected ']' after type parameters");
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after enum name");
+    match(TokenType::NEWLINE);
+    
+    consume(TokenType::INDENT, "Expected indented enum variants");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        auto variantName = consume(TokenType::IDENTIFIER, "Expected variant name").lexeme;
+        std::optional<int64_t> value;
+        if (match(TokenType::ASSIGN)) {
+            auto valTok = consume(TokenType::INTEGER, "Expected integer value");
+            value = std::get<int64_t>(valTok.literal);
+        }
+        en->variants.emplace_back(variantName, value);
+        match(TokenType::NEWLINE);
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of enum");
+    return en;
+}
+
+StmtPtr Parser::typeAliasDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected type name").lexeme;
+    consume(TokenType::ASSIGN, "Expected '=' after type name");
+    auto target = parseType();
+    match(TokenType::NEWLINE);
+    return std::make_unique<TypeAlias>(name, target, loc);
+}
+
+StmtPtr Parser::traitDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected trait name").lexeme;
+    
+    auto trait = std::make_unique<TraitDecl>(name, loc);
+    
+    if (match(TokenType::LBRACKET)) {
+        do {
+            trait->typeParams.push_back(consume(TokenType::IDENTIFIER, "Expected type parameter").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACKET, "Expected ']' after type parameters");
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after trait name");
+    match(TokenType::NEWLINE);
+    
+    consume(TokenType::INDENT, "Expected indented trait body");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        if (match(TokenType::FN)) {
+            auto fn = fnDeclaration();
+            trait->methods.push_back(std::unique_ptr<FnDecl>(static_cast<FnDecl*>(fn.release())));
+        }
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of trait");
+    return trait;
+}
+
+StmtPtr Parser::implDeclaration() {
+    auto loc = previous().location;
+    
+    auto firstIdent = consume(TokenType::IDENTIFIER, "Expected trait or type name").lexeme;
+    
+    std::string traitName;
+    std::string typeName;
+    
+    if (check(TokenType::FOR)) {
+        advance();
+        traitName = firstIdent;
+        typeName = consume(TokenType::IDENTIFIER, "Expected type name").lexeme;
+    } else {
+        typeName = firstIdent;
+    }
+    
+    auto impl = std::make_unique<ImplBlock>(traitName, typeName, loc);
+    
+    if (match(TokenType::LBRACKET)) {
+        do {
+            impl->typeParams.push_back(consume(TokenType::IDENTIFIER, "Expected type parameter").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACKET, "Expected ']' after type parameters");
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after impl declaration");
+    match(TokenType::NEWLINE);
+    
+    consume(TokenType::INDENT, "Expected indented impl body");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        if (match(TokenType::FN)) {
+            auto fn = fnDeclaration();
+            impl->methods.push_back(std::unique_ptr<FnDecl>(static_cast<FnDecl*>(fn.release())));
+        }
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of impl");
+    return impl;
+}
+
+StmtPtr Parser::useStatement() {
+    auto loc = previous().location;
+    
+    // use layer "name"
+    if (match(TokenType::LAYER)) {
+        auto name = consume(TokenType::STRING, "Expected layer name string").lexeme;
+        if (auto* str = std::get_if<std::string>(&previous().literal)) {
+            name = *str;
+        }
+        match(TokenType::NEWLINE);
+        auto stmt = std::make_unique<UseStmt>(name, loc);
+        stmt->isLayer = true;
+        return stmt;
+    }
+    
+    // use "file.fx" - file import
+    if (check(TokenType::STRING)) {
+        auto path = std::get<std::string>(advance().literal);
+        
+        // Check for alias: use "file.fx" as name
+        std::string alias;
+        if (check(TokenType::IDENTIFIER) && peek().lexeme == "as") {
+            advance();  // consume 'as'
+            alias = consume(TokenType::IDENTIFIER, "Expected alias name").lexeme;
+        }
+        
+        match(TokenType::NEWLINE);
+        auto stmt = std::make_unique<UseStmt>(path, loc);
+        stmt->isFileImport = true;
+        stmt->alias = alias;
+        return stmt;
+    }
+    
+    // use module::submodule or use module::{item1, item2}
+    std::string path;
+    path = consume(TokenType::IDENTIFIER, "Expected module name or string path").lexeme;
+    
+    while (match(TokenType::DOUBLE_COLON)) {
+        // Check for selective import: use math::{sin, cos}
+        if (match(TokenType::LBRACE)) {
+            auto stmt = std::make_unique<UseStmt>(path, loc);
+            
+            // Parse import items
+            if (!check(TokenType::RBRACE)) {
+                do {
+                    skipNewlines();
+                    stmt->importItems.push_back(
+                        consume(TokenType::IDENTIFIER, "Expected import item").lexeme
+                    );
+                } while (match(TokenType::COMMA));
+            }
+            skipNewlines();
+            consume(TokenType::RBRACE, "Expected '}' after import items");
+            match(TokenType::NEWLINE);
+            return stmt;
+        }
+        
+        // Check for wildcard: use math::*
+        if (match(TokenType::STAR)) {
+            auto stmt = std::make_unique<UseStmt>(path, loc);
+            stmt->importItems.push_back("*");  // Wildcard marker
+            match(TokenType::NEWLINE);
+            return stmt;
+        }
+        
+        path += "::" + consume(TokenType::IDENTIFIER, "Expected identifier").lexeme;
+    }
+    
+    // Check for alias: use math as m
+    std::string alias;
+    if (check(TokenType::IDENTIFIER) && peek().lexeme == "as") {
+        advance();  // consume 'as'
+        alias = consume(TokenType::IDENTIFIER, "Expected alias name").lexeme;
+    }
+    
+    match(TokenType::NEWLINE);
+    auto stmt = std::make_unique<UseStmt>(path, loc);
+    stmt->alias = alias;
+    return stmt;
+}
+
+StmtPtr Parser::moduleDeclaration() {
+    auto loc = previous().location;
+    
+    // module name:
+    std::string name = consume(TokenType::IDENTIFIER, "Expected module name").lexeme;
+    
+    // Allow nested module names: module math::calculus:
+    while (match(TokenType::DOUBLE_COLON)) {
+        name += "::" + consume(TokenType::IDENTIFIER, "Expected module name").lexeme;
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after module name");
+    match(TokenType::NEWLINE);
+    
+    auto mod = std::make_unique<ModuleDecl>(name, loc);
+    
+    // Parse module body (indented block)
+    if (match(TokenType::INDENT)) {
+        while (!check(TokenType::DEDENT) && !isAtEnd()) {
+            mod->body.push_back(declaration());
+            skipNewlines();
+        }
+        match(TokenType::DEDENT);
+    }
+    
+    return mod;
+}
+
+StmtPtr Parser::importStatement() {
+    auto loc = previous().location;
+    auto path = consume(TokenType::STRING, "Expected import path").lexeme;
+    if (auto* str = std::get_if<std::string>(&previous().literal)) {
+        path = *str;
+    }
+    
+    auto imp = std::make_unique<ImportStmt>(path, loc);
+    
+    if (match(TokenType::IDENTIFIER) && previous().lexeme == "as") {
+        imp->alias = consume(TokenType::IDENTIFIER, "Expected alias name").lexeme;
+    }
+    
+    match(TokenType::NEWLINE);
+    return imp;
+}
+
+StmtPtr Parser::externDeclaration() {
+    auto loc = previous().location;
+    
+    std::string abi = "C";
+    std::string library;
+    
+    if (check(TokenType::STRING)) {
+        abi = std::get<std::string>(advance().literal);
+    }
+    
+    if (check(TokenType::STRING)) {
+        library = std::get<std::string>(advance().literal);
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after extern");
+    match(TokenType::NEWLINE);
+    
+    auto ext = std::make_unique<ExternDecl>(abi, library, loc);
+    consume(TokenType::INDENT, "Expected indented extern block");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        if (match(TokenType::FN)) {
+            auto fn = fnDeclaration();
+            ext->functions.push_back(std::unique_ptr<FnDecl>(static_cast<FnDecl*>(fn.release())));
+        }
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of extern block");
+    return ext;
+}
+
+StmtPtr Parser::macroDeclaration() {
+    auto loc = previous().location;
+    
+    // Infix operator macro: macro infix "<=>" 50 left right: ...
+    if (check(TokenType::IDENTIFIER) && peek().lexeme == "infix") {
+        advance();
+        
+        auto opSymbol = consume(TokenType::STRING, "Expected operator symbol string").lexeme;
+        if (auto* str = std::get_if<std::string>(&previous().literal)) {
+            opSymbol = *str;
+        }
+        
+        int precedence = 50;
+        if (check(TokenType::INTEGER)) {
+            precedence = static_cast<int>(std::get<int64_t>(advance().literal));
+        }
+        
+        auto mac = std::make_unique<MacroDecl>("infix_" + opSymbol, loc);
+        mac->isOperator = true;
+        mac->isInfix = true;
+        mac->operatorSymbol = opSymbol;
+        mac->precedence = precedence;
+        
+        if (check(TokenType::IDENTIFIER)) {
+            mac->params.push_back(advance().lexeme);
+        } else {
+            mac->params.push_back("left");
+        }
+        if (check(TokenType::IDENTIFIER)) {
+            mac->params.push_back(advance().lexeme);
+        } else {
+            mac->params.push_back("right");
+        }
+        
+        consume(TokenType::COLON, "Expected ':' after infix macro signature");
+        match(TokenType::NEWLINE);
+        
+        if (check(TokenType::INDENT)) {
+            consume(TokenType::INDENT, "Expected indented macro body");
+            skipNewlines();
+            while (!check(TokenType::DEDENT) && !isAtEnd()) {
+                mac->body.push_back(declaration());
+                skipNewlines();
+            }
+            consume(TokenType::DEDENT, "Expected end of macro");
+        } else {
+            auto expr = expression();
+            mac->body.push_back(std::make_unique<ExprStmt>(std::move(expr), loc));
+            match(TokenType::NEWLINE);
+        }
+        
+        return mac;
+    }
+    
+    // Regular macro
+    auto name = consume(TokenType::IDENTIFIER, "Expected macro name").lexeme;
+    
+    auto mac = std::make_unique<MacroDecl>(name, loc);
+    
+    while (check(TokenType::IDENTIFIER)) {
+        mac->params.push_back(advance().lexeme);
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after macro signature");
+    match(TokenType::NEWLINE);
+    
+    if (check(TokenType::INDENT)) {
+        consume(TokenType::INDENT, "Expected indented macro body");
+        skipNewlines();
+        while (!check(TokenType::DEDENT) && !isAtEnd()) {
+            mac->body.push_back(declaration());
+            skipNewlines();
+        }
+        consume(TokenType::DEDENT, "Expected end of macro");
+    }
+    
+    return mac;
+}
+
+StmtPtr Parser::syntaxMacroDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected syntax macro name").lexeme;
+    
+    auto syntaxMac = std::make_unique<SyntaxMacroDecl>(name, loc);
+    
+    if (match(TokenType::DOUBLE_ARROW)) {
+        std::string transformExpr;
+        while (!check(TokenType::NEWLINE) && !isAtEnd()) {
+            transformExpr += peek().lexeme;
+            advance();
+        }
+        syntaxMac->transformExpr = transformExpr;
+        match(TokenType::NEWLINE);
+        return syntaxMac;
+    }
+    
+    if (match(TokenType::COLON)) {
+        match(TokenType::NEWLINE);
+        
+        if (check(TokenType::INDENT)) {
+            consume(TokenType::INDENT, "Expected indented syntax macro body");
+            skipNewlines();
+            
+            if (check(TokenType::IDENTIFIER) && peek().lexeme == "transform") {
+                advance();
+                if (match(TokenType::DOUBLE_ARROW)) {
+                    std::string transformExpr;
+                    while (!check(TokenType::NEWLINE) && !isAtEnd()) {
+                        if (!transformExpr.empty()) transformExpr += " ";
+                        transformExpr += peek().lexeme;
+                        advance();
+                    }
+                    syntaxMac->transformExpr = transformExpr;
+                    match(TokenType::NEWLINE);
+                    skipNewlines();
+                }
+            }
+            
+            while (!check(TokenType::DEDENT) && !isAtEnd()) {
+                syntaxMac->body.push_back(declaration());
+                skipNewlines();
+            }
+            consume(TokenType::DEDENT, "Expected end of syntax macro");
+        }
+    } else {
+        match(TokenType::NEWLINE);
+    }
+    
+    return syntaxMac;
+}
+
+StmtPtr Parser::layerDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected layer name").lexeme;
+    consume(TokenType::COLON, "Expected ':' after layer name");
+    match(TokenType::NEWLINE);
+    
+    auto layer = std::make_unique<LayerDecl>(name, loc);
+    consume(TokenType::INDENT, "Expected indented layer body");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        layer->declarations.push_back(declaration());
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of layer");
+    return layer;
+}
+
+StmtPtr Parser::unsafeBlock() {
+    auto loc = previous().location;
+    consume(TokenType::COLON, "Expected ':' after unsafe");
+    match(TokenType::NEWLINE);
+    auto body = block();
+    return std::make_unique<UnsafeBlock>(std::move(body), loc);
+}
+
+} // namespace flex

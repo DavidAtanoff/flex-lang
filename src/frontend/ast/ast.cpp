@@ -1,0 +1,62 @@
+// Flex Compiler - AST Implementation
+#include "frontend/ast/ast.h"
+
+namespace flex {
+
+void IntegerLiteral::accept(ASTVisitor& v) { v.visit(*this); }
+void FloatLiteral::accept(ASTVisitor& v) { v.visit(*this); }
+void StringLiteral::accept(ASTVisitor& v) { v.visit(*this); }
+void InterpolatedString::accept(ASTVisitor& v) { v.visit(*this); }
+void BoolLiteral::accept(ASTVisitor& v) { v.visit(*this); }
+void NilLiteral::accept(ASTVisitor& v) { v.visit(*this); }
+void Identifier::accept(ASTVisitor& v) { v.visit(*this); }
+void BinaryExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void UnaryExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void CallExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MemberExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void IndexExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void ListExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void RecordExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void RangeExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void LambdaExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void TernaryExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void ListCompExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void AddressOfExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void DerefExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void NewExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void CastExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void AwaitExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void SpawnExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void DSLBlock::accept(ASTVisitor& v) { v.visit(*this); }
+void AssignExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void ExprStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void VarDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void DestructuringDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void AssignStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void Block::accept(ASTVisitor& v) { v.visit(*this); }
+void IfStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void WhileStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void ForStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void MatchStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void ReturnStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void BreakStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void ContinueStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void TryStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void FnDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void RecordDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void EnumDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void TypeAlias::accept(ASTVisitor& v) { v.visit(*this); }
+void TraitDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void ImplBlock::accept(ASTVisitor& v) { v.visit(*this); }
+void UnsafeBlock::accept(ASTVisitor& v) { v.visit(*this); }
+void ImportStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void ExternDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void MacroDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void SyntaxMacroDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void LayerDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void UseStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void ModuleDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void DeleteStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void Program::accept(ASTVisitor& v) { v.visit(*this); }
+
+} // namespace flex
