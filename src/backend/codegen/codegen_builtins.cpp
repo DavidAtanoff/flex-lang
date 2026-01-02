@@ -7,10 +7,9 @@ namespace flex {
 
 // Check if itoa should be inlined based on optimization level
 bool NativeCodeGen::shouldInlineItoa() const {
-    // O3/Ofast: Always inline for speed
-    // Os/Oz: Use shared routine for code size
-    // O0/O1/O2: Use shared routine for code size
-    return optLevel_ == CodeGenOptLevel::O3 || optLevel_ == CodeGenOptLevel::Ofast;
+    // Always inline itoa for now - the shared routine requires
+    // emitRuntimeRoutines() to be called, which is not currently integrated
+    return true;
 }
 
 // Check if ftoa should be inlined based on optimization level

@@ -86,12 +86,18 @@ public:
     void clear() {
         modules_.clear();
         loadStack_.clear();
+        importChain_.clear();
         moduleFiles_.clear();
+        errors_.clear();
     }
     
     // Get errors
     const std::vector<std::string>& errors() const { return errors_; }
     bool hasErrors() const { return !errors_.empty(); }
+    void clearErrors() { errors_.clear(); }
+    
+    // Get the circular dependency cycle path (if any)
+    std::string getCircularDependencyPath(const std::string& moduleName) const;
     
 private:
     ModuleSystem() {
@@ -102,6 +108,7 @@ private:
     std::vector<std::string> searchPaths_;
     std::unordered_map<std::string, std::unique_ptr<Module>> modules_;
     std::unordered_set<std::string> loadStack_;  // For circular dependency detection
+    std::vector<std::string> importChain_;       // Ordered import chain for cycle path reporting
     std::unordered_map<std::string, std::string> moduleFiles_;  // module name -> file path
     std::vector<std::string> errors_;
     

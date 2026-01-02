@@ -596,6 +596,53 @@ std::optional<CTFEValue> CTFEPass::evaluateExpression(Expression* expr,
             }
         }
         
+        // Float operations
+        if (std::holds_alternative<double>(*left) && std::holds_alternative<double>(*right)) {
+            double l = std::get<double>(*left);
+            double r = std::get<double>(*right);
+            
+            switch (binary->op) {
+                case TokenType::PLUS:  return CTFEValue{l + r};
+                case TokenType::MINUS: return CTFEValue{l - r};
+                case TokenType::STAR:  return CTFEValue{l * r};
+                case TokenType::SLASH: 
+                    if (r != 0.0) return CTFEValue{l / r};
+                    return std::nullopt;
+                case TokenType::EQ:  return CTFEValue{l == r};
+                case TokenType::NE:  return CTFEValue{l != r};
+                case TokenType::LT:  return CTFEValue{l < r};
+                case TokenType::GT:  return CTFEValue{l > r};
+                case TokenType::LE:  return CTFEValue{l <= r};
+                case TokenType::GE:  return CTFEValue{l >= r};
+                default: break;
+            }
+        }
+        
+        // Mixed int/float operations - promote int to float
+        if ((std::holds_alternative<int64_t>(*left) && std::holds_alternative<double>(*right)) ||
+            (std::holds_alternative<double>(*left) && std::holds_alternative<int64_t>(*right))) {
+            double l = std::holds_alternative<double>(*left) ? 
+                       std::get<double>(*left) : static_cast<double>(std::get<int64_t>(*left));
+            double r = std::holds_alternative<double>(*right) ? 
+                       std::get<double>(*right) : static_cast<double>(std::get<int64_t>(*right));
+            
+            switch (binary->op) {
+                case TokenType::PLUS:  return CTFEValue{l + r};
+                case TokenType::MINUS: return CTFEValue{l - r};
+                case TokenType::STAR:  return CTFEValue{l * r};
+                case TokenType::SLASH: 
+                    if (r != 0.0) return CTFEValue{l / r};
+                    return std::nullopt;
+                case TokenType::EQ:  return CTFEValue{l == r};
+                case TokenType::NE:  return CTFEValue{l != r};
+                case TokenType::LT:  return CTFEValue{l < r};
+                case TokenType::GT:  return CTFEValue{l > r};
+                case TokenType::LE:  return CTFEValue{l <= r};
+                case TokenType::GE:  return CTFEValue{l >= r};
+                default: break;
+            }
+        }
+        
         // Boolean operations
         if (std::holds_alternative<bool>(*left) && std::holds_alternative<bool>(*right)) {
             bool l = std::get<bool>(*left);
@@ -633,6 +680,13 @@ std::optional<CTFEValue> CTFEPass::evaluateExpression(Expression* expr,
             switch (unary->op) {
                 case TokenType::MINUS: return CTFEValue{-v};
                 case TokenType::TILDE: return CTFEValue{~v};
+                default: break;
+            }
+        }
+        else if (std::holds_alternative<double>(*operand)) {
+            double v = std::get<double>(*operand);
+            switch (unary->op) {
+                case TokenType::MINUS: return CTFEValue{-v};
                 default: break;
             }
         }

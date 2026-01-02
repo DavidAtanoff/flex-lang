@@ -3,6 +3,7 @@
 #define FLEX_SYMBOL_TABLE_H
 
 #include "semantic/types/types.h"
+#include "common/common.h"  // For SourceLocation
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -22,12 +23,15 @@ struct Symbol {
     bool isMutable = true;
     bool isExported = false;
     bool isInitialized = false;
+    bool isUsed = false;           // Track if variable is used
+    bool isParameter = false;      // Track if this is a function parameter
     int32_t offset = 0;
     int paramCount = 0;
     bool isVariadic = false;
     std::string file;
     int line = 0;
     int column = 0;
+    SourceLocation location;       // Full source location for warnings
     Symbol() = default;
     Symbol(std::string n, SymbolKind k, TypePtr t) : name(std::move(n)), kind(k), type(std::move(t)) {}
 };
@@ -45,6 +49,7 @@ public:
     bool isFunction() const { return kind_ == Kind::FUNCTION; }
     bool isUnsafe() const;
     const std::unordered_map<std::string, Symbol>& symbols() const { return symbols_; }
+    std::unordered_map<std::string, Symbol>& symbolsMut() { return symbols_; }  // Mutable access for marking usage
     int32_t allocateLocal(size_t size);
     int32_t currentStackOffset() const { return stackOffset_; }
 private:

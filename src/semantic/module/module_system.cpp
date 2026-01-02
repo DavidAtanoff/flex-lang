@@ -114,7 +114,9 @@ Module* ModuleSystem::loadModule(const std::string& name, const std::string& fro
     
     // Check for circular dependency
     if (loadStack_.count(name)) {
-        errors_.push_back("Circular dependency detected: " + name);
+        // Build the cycle path for a clear error message
+        std::string cyclePath = getCircularDependencyPath(name);
+        errors_.push_back("Circular import detected: " + cyclePath);
         return nullptr;
     }
     
@@ -125,8 +127,9 @@ Module* ModuleSystem::loadModule(const std::string& name, const std::string& fro
         return nullptr;
     }
     
-    // Mark as loading
+    // Mark as loading and add to import chain
     loadStack_.insert(name);
+    importChain_.push_back(name);
     
     // Create module
     auto mod = std::make_unique<Module>();
@@ -147,14 +150,43 @@ Module* ModuleSystem::loadModule(const std::string& name, const std::string& fro
     } catch (const std::exception& e) {
         errors_.push_back("Error loading module " + name + ": " + e.what());
         loadStack_.erase(name);
+        importChain_.pop_back();
         return nullptr;
     }
     
     loadStack_.erase(name);
+    importChain_.pop_back();
     
     Module* result = mod.get();
     modules_[name] = std::move(mod);
     return result;
+}
+
+std::string ModuleSystem::getCircularDependencyPath(const std::string& moduleName) const {
+    // Find where the cycle starts in the import chain
+    std::string cyclePath;
+    bool inCycle = false;
+    
+    for (const auto& mod : importChain_) {
+        if (mod == moduleName) {
+            inCycle = true;
+        }
+        if (inCycle) {
+            if (!cyclePath.empty()) {
+                cyclePath += " -> ";
+            }
+            cyclePath += mod;
+        }
+    }
+    
+    // Complete the cycle by adding the module that caused it
+    if (!cyclePath.empty()) {
+        cyclePath += " -> " + moduleName;
+    } else {
+        cyclePath = moduleName + " -> " + moduleName;
+    }
+    
+    return cyclePath;
 }
 
 Module* ModuleSystem::getModule(const std::string& name) {
@@ -163,7 +195,7 @@ Module* ModuleSystem::getModule(const std::string& name) {
 }
 
 bool ModuleSystem::hasCircularDependency(const std::string& from, const std::string& to) {
-    // Simple check: is 'to' currently being loaded?
+    // Check if 'to' is currently being loaded (in the import chain)
     return loadStack_.count(to) > 0;
 }
 
@@ -179,14 +211,25 @@ void ModuleSystem::processImports(Program& program, const std::string& currentFi
                 std::string importPath = resolveModulePath(moduleName, currentFile);
                 
                 if (importPath.empty()) {
-                    errors_.push_back("Cannot find file: " + moduleName);
+                    std::string errorMsg = "Cannot find file: " + moduleName;
+                    if (useStmt->location.line > 0) {
+                        errorMsg += " (at line " + std::to_string(useStmt->location.line) + ")";
+                    }
+                    errors_.push_back(errorMsg);
                     continue;
                 }
                 
-                // Check for circular dependency
+                // Convert to module name for circular dependency check
                 std::string modName = pathToModuleName(importPath);
+                
+                // Check for circular dependency before loading
                 if (hasCircularDependency(currentFile, modName)) {
-                    errors_.push_back("Circular import detected: " + moduleName);
+                    std::string cyclePath = getCircularDependencyPath(modName);
+                    std::string errorMsg = "Circular import detected: " + cyclePath;
+                    if (useStmt->location.line > 0) {
+                        errorMsg += "\n  at " + currentFile + ":" + std::to_string(useStmt->location.line);
+                    }
+                    errors_.push_back(errorMsg);
                     continue;
                 }
                 
@@ -205,9 +248,25 @@ void ModuleSystem::processImports(Program& program, const std::string& currentFi
             }
             // Handle qualified imports (use math::calculus)
             else if (moduleName.find("::") != std::string::npos) {
+                // Check for circular dependency before loading
+                if (hasCircularDependency(currentFile, moduleName)) {
+                    std::string cyclePath = getCircularDependencyPath(moduleName);
+                    std::string errorMsg = "Circular import detected: " + cyclePath;
+                    if (useStmt->location.line > 0) {
+                        errorMsg += "\n  at " + currentFile + ":" + std::to_string(useStmt->location.line);
+                    }
+                    errors_.push_back(errorMsg);
+                    newStatements.push_back(std::move(stmt));
+                    continue;
+                }
+                
                 Module* mod = loadModule(moduleName, currentFile);
                 if (!mod) {
-                    errors_.push_back("Cannot load module: " + moduleName);
+                    std::string errorMsg = "Cannot load module: " + moduleName;
+                    if (useStmt->location.line > 0) {
+                        errorMsg += " (at line " + std::to_string(useStmt->location.line) + ")";
+                    }
+                    errors_.push_back(errorMsg);
                 }
                 newStatements.push_back(std::move(stmt));
             }
@@ -217,6 +276,18 @@ void ModuleSystem::processImports(Program& program, const std::string& currentFi
             }
             // Handle simple module imports (use math)
             else {
+                // Check for circular dependency before loading
+                if (hasCircularDependency(currentFile, moduleName)) {
+                    std::string cyclePath = getCircularDependencyPath(moduleName);
+                    std::string errorMsg = "Circular import detected: " + cyclePath;
+                    if (useStmt->location.line > 0) {
+                        errorMsg += "\n  at " + currentFile + ":" + std::to_string(useStmt->location.line);
+                    }
+                    errors_.push_back(errorMsg);
+                    newStatements.push_back(std::move(stmt));
+                    continue;
+                }
+                
                 Module* mod = loadModule(moduleName, currentFile);
                 if (!mod) {
                     // Try as file with .fx extension

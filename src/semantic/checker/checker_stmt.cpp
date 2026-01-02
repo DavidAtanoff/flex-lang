@@ -17,10 +17,19 @@ void TypeChecker::visit(VarDecl& node) {
     sym.isInitialized = node.initializer != nullptr;
     sym.isMutable = node.isMutable;
     sym.storage = symbols_.currentScope()->isGlobal() ? StorageClass::GLOBAL : StorageClass::LOCAL;
+    sym.location = node.location;  // Store location for unused variable warnings
+    sym.isUsed = false;            // Initialize as unused
     symbols_.define(sym);
 }
 
 void TypeChecker::visit(AssignStmt& node) {
+    // Check for pointer dereference assignment (*ptr = value) - requires unsafe block
+    if (dynamic_cast<DerefExpr*>(node.target.get())) {
+        if (!symbols_.inUnsafe()) {
+            error("Pointer dereference assignment requires unsafe block", node.location);
+        }
+    }
+    
     TypePtr targetType = inferType(node.target.get());
     TypePtr valueType = inferType(node.value.get());
     if (auto* id = dynamic_cast<Identifier*>(node.target.get())) {
@@ -32,6 +41,7 @@ void TypeChecker::visit(AssignStmt& node) {
 void TypeChecker::visit(Block& node) {
     symbols_.pushScope(Scope::Kind::BLOCK);
     for (auto& stmt : node.statements) stmt->accept(*this);
+    checkUnusedVariables(symbols_.currentScope());  // Check for unused variables before popping
     symbols_.popScope();
 }
 
@@ -49,6 +59,7 @@ void TypeChecker::visit(WhileStmt& node) {
     inferType(node.condition.get());
     symbols_.pushScope(Scope::Kind::LOOP);
     node.body->accept(*this);
+    checkUnusedVariables(symbols_.currentScope());
     symbols_.popScope();
 }
 
@@ -59,8 +70,10 @@ void TypeChecker::visit(ForStmt& node) {
     if (iterType->kind == TypeKind::LIST) elemType = static_cast<ListType*>(iterType.get())->element;
     symbols_.pushScope(Scope::Kind::LOOP);
     Symbol varSym(node.var, SymbolKind::VARIABLE, elemType);
+    varSym.location = node.location;
     symbols_.define(varSym);
     node.body->accept(*this);
+    checkUnusedVariables(symbols_.currentScope());
     symbols_.popScope();
 }
 

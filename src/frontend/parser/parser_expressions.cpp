@@ -5,6 +5,7 @@
 #include "frontend/macro/syntax_macro.h"
 #include "frontend/lexer/lexer.h"
 #include "common/errors.h"
+#include <unordered_set>
 
 namespace flex {
 
@@ -36,6 +37,7 @@ static Parser::Precedence getInfixPrecedence(TokenType type) {
         case TokenType::STAR:
         case TokenType::SLASH:
         case TokenType::PERCENT: return Parser::Precedence::FACTOR;
+        case TokenType::CUSTOM_OP: return Parser::Precedence::FACTOR; // Custom ops get factor precedence by default
         case TokenType::PIPE_GT: return Parser::Precedence::PIPE;
         case TokenType::QUESTION: return Parser::Precedence::TERNARY;
         case TokenType::DOT:
@@ -140,7 +142,52 @@ ExprPtr Parser::parseInfix(ExprPtr left, Precedence prec) {
     auto loc = peek().location;
     TokenType op = peek().type;
     
-    // Handle user-defined infix operators
+    // Handle CUSTOM_OP tokens (like **)
+    if (check(TokenType::CUSTOM_OP)) {
+        std::string opSymbol = peek().lexeme;
+        advance();
+        auto right = parsePrecedence(static_cast<Precedence>(static_cast<int>(prec) + 1));
+        
+        // Check if there's a user-defined infix macro for this operator
+        auto& registry = SyntaxMacroRegistry::instance();
+        if (registry.isUserInfixOperator(opSymbol)) {
+            auto opIdent = std::make_unique<Identifier>("__infix_" + opSymbol, loc);
+            auto call = std::make_unique<CallExpr>(std::move(opIdent), loc);
+            call->args.push_back(std::move(left));
+            call->args.push_back(std::move(right));
+            return call;
+        }
+        
+        // No macro defined - create a call to a function named after the operator
+        // e.g., ** becomes __op_starstar
+        std::string funcName = "__op_";
+        for (char c : opSymbol) {
+            switch (c) {
+                case '*': funcName += "star"; break;
+                case '+': funcName += "plus"; break;
+                case '-': funcName += "minus"; break;
+                case '/': funcName += "slash"; break;
+                case '%': funcName += "percent"; break;
+                case '<': funcName += "lt"; break;
+                case '>': funcName += "gt"; break;
+                case '=': funcName += "eq"; break;
+                case '!': funcName += "bang"; break;
+                case '&': funcName += "amp"; break;
+                case '|': funcName += "pipe"; break;
+                case '^': funcName += "caret"; break;
+                case '~': funcName += "tilde"; break;
+                case '@': funcName += "at"; break;
+                default: funcName += c; break;
+            }
+        }
+        auto opIdent = std::make_unique<Identifier>(funcName, loc);
+        auto call = std::make_unique<CallExpr>(std::move(opIdent), loc);
+        call->args.push_back(std::move(left));
+        call->args.push_back(std::move(right));
+        return call;
+    }
+    
+    // Handle user-defined infix operators (identifier-based)
     if (check(TokenType::IDENTIFIER)) {
         auto& registry = SyntaxMacroRegistry::instance();
         std::string opSymbol = peek().lexeme;
@@ -169,7 +216,24 @@ ExprPtr Parser::parseInfix(ExprPtr left, Precedence prec) {
     }
     
     // Standard Ternary: condition ? then : else
+    // OR Postfix error propagation: expr?
     if (op == TokenType::QUESTION) {
+        // Check if this is postfix ? (error propagation) or ternary ?:
+        // If the next token cannot start an expression, it's postfix ?
+        // Common cases: newline, ), ], }, ;, ,, operators, EOF
+        TokenType next = peek().type;
+        bool isPostfix = (next == TokenType::NEWLINE || next == TokenType::RPAREN ||
+                          next == TokenType::RBRACKET || next == TokenType::RBRACE ||
+                          next == TokenType::SEMICOLON || next == TokenType::COMMA ||
+                          next == TokenType::END_OF_FILE || next == TokenType::DEDENT ||
+                          next == TokenType::COLON);  // : alone means postfix, not ternary
+        
+        if (isPostfix) {
+            // Postfix ? - error propagation operator
+            return std::make_unique<PropagateExpr>(std::move(left), loc);
+        }
+        
+        // Ternary: condition ? then : else
         auto thenExpr = parsePrecedence(Precedence::TERNARY);
         consume(TokenType::COLON, "Expected ':' in ternary expression");
         auto elseExpr = parsePrecedence(Precedence::TERNARY);
@@ -263,19 +327,70 @@ ExprPtr Parser::parseMemberAccess(ExprPtr object, SourceLocation loc) {
     return std::make_unique<MemberExpr>(std::move(object), member, loc);
 }
 
-// Parse index access: expr[index]
-ExprPtr Parser::parseIndexAccess(ExprPtr object, SourceLocation loc) {
-    auto index = expression();
-    consume(TokenType::RBRACKET, "Expected ']' after index");
-    return std::make_unique<IndexExpr>(std::move(object), std::move(index), loc);
-}
-
-// Parse function call: expr(args)
+// Parse function call: expr(args) or expr[TypeArgs](args)
 ExprPtr Parser::parseCall(ExprPtr callee, SourceLocation loc) {
     auto call = std::make_unique<CallExpr>(std::move(callee), loc);
     parseCallArgs(call.get());
     consume(TokenType::RPAREN, "Expected ')' after arguments");
     return call;
+}
+
+// Parse index access or explicit type arguments followed by call
+ExprPtr Parser::parseIndexAccess(ExprPtr object, SourceLocation loc) {
+    // Check if this might be explicit type arguments for a generic call
+    // Pattern: identifier[Type1, Type2](args)
+    // We need to look ahead to see if there's a ( after the ]
+    
+    // First, check if the object is an identifier (potential generic function)
+    bool mightBeTypeArgs = dynamic_cast<Identifier*>(object.get()) != nullptr;
+    
+    if (mightBeTypeArgs) {
+        // Save position to potentially backtrack
+        size_t savedPos = current;
+        
+        // Try to parse as type arguments
+        std::vector<std::string> typeArgs;
+        bool validTypeArgs = true;
+        
+        // Parse type arguments
+        do {
+            skipNewlines();
+            if (check(TokenType::IDENTIFIER)) {
+                std::string typeArg = parseType();
+                if (!typeArg.empty()) {
+                    typeArgs.push_back(typeArg);
+                } else {
+                    validTypeArgs = false;
+                    break;
+                }
+            } else {
+                validTypeArgs = false;
+                break;
+            }
+        } while (match(TokenType::COMMA));
+        
+        if (validTypeArgs && check(TokenType::RBRACKET)) {
+            advance(); // consume ]
+            
+            // Check if followed by (
+            if (check(TokenType::LPAREN)) {
+                advance(); // consume (
+                auto call = std::make_unique<CallExpr>(std::move(object), loc);
+                call->typeArgs = std::move(typeArgs);
+                parseCallArgs(call.get());
+                consume(TokenType::RPAREN, "Expected ')' after arguments");
+                return call;
+            }
+        }
+        
+        // Not type arguments - restore position and parse as index
+        current = savedPos;
+    }
+    
+    // Regular index access
+    auto index = expression();
+    consume(TokenType::RBRACKET, "Expected ']' after index");
+    return std::make_unique<IndexExpr>(std::move(object), std::move(index), loc);
 }
 
 // Parse pipe: left |> right  ->  right(left) or right.call(left, existing_args...)
@@ -392,10 +507,28 @@ ExprPtr Parser::primary() {
         return std::make_unique<NilLiteral>(loc);
     }
     
-    // Identifier (may be DSL block)
+    // Identifier (may be DSL block or builtin function)
     if (match(TokenType::IDENTIFIER)) {
         std::string name = previous().lexeme;
         auto idLoc = previous().location;
+        
+        // Check for builtin functions that can be called without parentheses in expressions
+        // These are functions like str, len, int, float, bool, type, etc.
+        static const std::unordered_set<std::string> exprBuiltins = {
+            "str", "len", "int", "float", "bool", "type", "abs", "not"
+        };
+        
+        if (exprBuiltins.count(name) && !check(TokenType::LPAREN) && !isAtStatementBoundary() &&
+            !check(TokenType::ASSIGN) && !check(TokenType::COLON) && !check(TokenType::NEWLINE) &&
+            !check(TokenType::COMMA) && !check(TokenType::RPAREN) && !check(TokenType::RBRACKET) &&
+            !check(TokenType::PLUS) && !check(TokenType::MINUS) && !check(TokenType::STAR) &&
+            !check(TokenType::SLASH) && !check(TokenType::PERCENT)) {
+            // Parse as function call with single argument
+            auto callee = std::make_unique<Identifier>(name, idLoc);
+            auto call = std::make_unique<CallExpr>(std::move(callee), idLoc);
+            call->args.push_back(parsePrecedence(Precedence::UNARY));
+            return call;
+        }
         
         // Check for DSL block: name:\n INDENT content DEDENT
         if (check(TokenType::COLON)) {
@@ -509,21 +642,51 @@ ExprPtr Parser::listLiteral() {
     return list;
 }
 
-// Record literal: {field: value, ...}
+// Record literal: {field: value, ...} or Map literal: {"key": value, ...}
 ExprPtr Parser::recordLiteral() {
     auto loc = previous().location;
-    auto rec = std::make_unique<RecordExpr>(loc);
     
     skipNewlines();
-    if (!check(TokenType::RBRACE)) {
+    
+    // Empty braces - return empty record
+    if (check(TokenType::RBRACE)) {
+        advance();
+        return std::make_unique<RecordExpr>(loc);
+    }
+    
+    // Peek at first token to determine if this is a map (string key) or record (identifier key)
+    if (check(TokenType::STRING)) {
+        // This is a map literal: {"key": value, ...}
+        auto map = std::make_unique<MapExpr>(loc);
         do {
             skipNewlines();
-            auto name = consume(TokenType::IDENTIFIER, "Expected field name").lexeme;
-            consume(TokenType::COLON, "Expected ':' after field name");
+            if (check(TokenType::RBRACE)) break;
+            
+            // Parse key (must be a string for maps)
+            auto keyToken = consume(TokenType::STRING, "Expected string key in map");
+            auto key = std::make_unique<StringLiteral>(std::get<std::string>(keyToken.literal), keyToken.location);
+            
+            consume(TokenType::COLON, "Expected ':' after map key");
             auto value = expression();
-            rec->fields.emplace_back(name, std::move(value));
+            map->entries.emplace_back(std::move(key), std::move(value));
         } while (match(TokenType::COMMA));
+        
+        skipNewlines();
+        consume(TokenType::RBRACE, "Expected '}' after map");
+        return map;
     }
+    
+    // This is a record literal: {field: value, ...}
+    auto rec = std::make_unique<RecordExpr>(loc);
+    do {
+        skipNewlines();
+        if (check(TokenType::RBRACE)) break;
+        
+        auto name = consume(TokenType::IDENTIFIER, "Expected field name").lexeme;
+        consume(TokenType::COLON, "Expected ':' after field name");
+        auto value = expression();
+        rec->fields.emplace_back(name, std::move(value));
+    } while (match(TokenType::COMMA));
     
     skipNewlines();
     consume(TokenType::RBRACE, "Expected '}' after record");

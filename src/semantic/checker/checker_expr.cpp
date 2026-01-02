@@ -53,6 +53,10 @@ void TypeChecker::visit(Identifier& node) {
         currentType_ = TypeRegistry::instance().errorType();
         return;
     }
+    
+    // Mark the variable as used
+    sym->isUsed = true;
+    
     currentType_ = sym->type;
 }
 
@@ -61,6 +65,13 @@ void TypeChecker::visit(BinaryExpr& node) {
     auto& reg = TypeRegistry::instance();
     TypePtr leftType = inferType(node.left.get());
     TypePtr rightType = inferType(node.right.get());
+    
+    // Check for pointer arithmetic - requires unsafe block
+    bool isPointerArithmetic = (leftType->isPointer() || rightType->isPointer()) &&
+                               (node.op == TokenType::PLUS || node.op == TokenType::MINUS);
+    if (isPointerArithmetic && !symbols_.inUnsafe()) {
+        error("Pointer arithmetic requires unsafe block", node.location);
+    }
     
     // If either operand is ANY, allow the operation and return ANY
     if (leftType->kind == TypeKind::ANY || rightType->kind == TypeKind::ANY) {
@@ -82,6 +93,21 @@ void TypeChecker::visit(BinaryExpr& node) {
                 currentType_ = reg.anyType();
                 return;
         }
+    }
+    
+    // Handle pointer arithmetic result type
+    if (isPointerArithmetic) {
+        // Pointer difference: ptr - ptr = int (element count between pointers)
+        if (leftType->isPointer() && rightType->isPointer() && node.op == TokenType::MINUS) {
+            currentType_ = reg.intType();  // ptr - ptr = int (element count)
+            return;
+        }
+        if (leftType->isPointer()) {
+            currentType_ = leftType;  // ptr + int = ptr, ptr - int = ptr
+        } else {
+            currentType_ = rightType;  // int + ptr = ptr
+        }
+        return;
     }
     
     switch (node.op) {
@@ -137,6 +163,34 @@ void TypeChecker::visit(UnaryExpr& node) {
 
 void TypeChecker::visit(CallExpr& node) {
     auto& reg = TypeRegistry::instance();
+    
+    // Check for unsafe operations: alloc(), free(), stackalloc(), placement_new(), gc_pin(), gc_unpin(), gc_add_root(), gc_remove_root(), set_allocator() require unsafe block
+    if (auto* id = dynamic_cast<Identifier*>(node.callee.get())) {
+        if (id->name == "alloc" || id->name == "free" || 
+            id->name == "stackalloc" || id->name == "placement_new" ||
+            id->name == "gc_pin" || id->name == "gc_unpin" ||
+            id->name == "gc_add_root" || id->name == "gc_remove_root" ||
+            id->name == "set_allocator") {
+            if (!symbols_.inUnsafe()) {
+                error("'" + id->name + "' requires unsafe block", node.location);
+            }
+        }
+        
+        // Special handling for type introspection operators
+        // sizeof(T), alignof(T), offsetof(Record, field) take type/field names as arguments
+        // These should not be checked as regular identifiers
+        if (id->name == "sizeof" || id->name == "alignof") {
+            // These take a type name as argument - return int
+            currentType_ = reg.intType();
+            return;
+        }
+        if (id->name == "offsetof") {
+            // Takes record type name and field name - return int
+            currentType_ = reg.intType();
+            return;
+        }
+    }
+    
     TypePtr calleeType = inferType(node.callee.get());
     
     if (calleeType->kind == TypeKind::FUNCTION) {
@@ -185,14 +239,18 @@ void TypeChecker::visit(CallExpr& node) {
             }
         }
         
-        // Non-generic function call
-        for (size_t i = 0; i < node.args.size() && i < fnType->params.size(); i++) {
+        // Non-generic function call passed arguments
+        for (size_t i = 0; i < node.args.size(); i++) {
             TypePtr argType = inferType(node.args[i].get());
-            TypePtr paramType = fnType->params[i].second;
             
-            if (!isAssignable(paramType, argType)) {
-                error("Argument type mismatch: expected '" + paramType->toString() + 
-                      "', got '" + argType->toString() + "'", node.args[i]->location);
+            // Only check against parameters if we have a corresponding parameter
+            if (i < fnType->params.size()) {
+                TypePtr paramType = fnType->params[i].second;
+                
+                if (!isAssignable(paramType, argType)) {
+                    error("Argument type mismatch: expected '" + paramType->toString() + 
+                          "', got '" + argType->toString() + "'", node.args[i]->location);
+                }
             }
         }
         currentType_ = fnType->returnType ? fnType->returnType : reg.voidType();
@@ -251,6 +309,21 @@ void TypeChecker::visit(RecordExpr& node) {
     currentType_ = recType;
 }
 
+void TypeChecker::visit(MapExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    TypePtr keyType = reg.stringType();  // Maps always have string keys for now
+    TypePtr valueType = reg.anyType();
+    
+    if (!node.entries.empty()) {
+        // Infer value type from first entry
+        valueType = inferType(node.entries[0].second.get());
+    }
+    
+    // For now, represent map as a generic type
+    // A proper implementation would have a MapType
+    currentType_ = reg.anyType();
+}
+
 void TypeChecker::visit(RangeExpr& node) {
     auto& reg = TypeRegistry::instance();
     inferType(node.start.get());
@@ -301,14 +374,20 @@ void TypeChecker::visit(ListCompExpr& node) {
 
 void TypeChecker::visit(AddressOfExpr& node) {
     auto& reg = TypeRegistry::instance();
-    if (!symbols_.inUnsafe()) error("Address-of operator requires unsafe block", node.location);
+    // Address-of operator requires unsafe block for raw pointer creation
+    if (!symbols_.inUnsafe()) {
+        error("Address-of operator '&' requires unsafe block", node.location);
+    }
     TypePtr operandType = inferType(node.operand.get());
     currentType_ = reg.ptrType(operandType, true);
 }
 
 void TypeChecker::visit(DerefExpr& node) {
     auto& reg = TypeRegistry::instance();
-    if (!symbols_.inUnsafe()) error("Dereference operator requires unsafe block", node.location);
+    // Pointer dereference requires unsafe block
+    if (!symbols_.inUnsafe()) {
+        error("Pointer dereference '*' requires unsafe block", node.location);
+    }
     TypePtr operandType = inferType(node.operand.get());
     if (operandType->isPointer()) {
         currentType_ = static_cast<PtrType*>(operandType.get())->pointee;
@@ -320,15 +399,28 @@ void TypeChecker::visit(DerefExpr& node) {
 
 void TypeChecker::visit(NewExpr& node) {
     auto& reg = TypeRegistry::instance();
+    // Raw allocation with 'new' requires unsafe block
+    if (!symbols_.inUnsafe()) {
+        error("'new' expression requires unsafe block", node.location);
+    }
     TypePtr allocType = symbols_.lookupType(node.typeName);
     if (!allocType) allocType = reg.fromString(node.typeName);
     for (auto& arg : node.args) inferType(arg.get());
-    currentType_ = reg.ptrType(allocType, symbols_.inUnsafe());
+    currentType_ = reg.ptrType(allocType, true);
 }
 
 void TypeChecker::visit(CastExpr& node) {
-    inferType(node.expr.get());
+    TypePtr sourceType = inferType(node.expr.get());
     TypePtr targetType = parseTypeAnnotation(node.targetType);
+    
+    // Pointer casting requires unsafe block
+    bool isPointerCast = (sourceType->isPointer() && targetType->isPointer()) ||
+                         (sourceType->isPointer() && targetType->kind == TypeKind::INT) ||
+                         (sourceType->kind == TypeKind::INT && targetType->isPointer());
+    if (isPointerCast && !symbols_.inUnsafe()) {
+        error("Pointer casting requires unsafe block", node.location);
+    }
+    
     currentType_ = targetType;
 }
 
@@ -361,7 +453,12 @@ void TypeChecker::visit(DSLBlock& node) {
 }
 
 void TypeChecker::visit(AssignExpr& node) {
-    auto& reg = TypeRegistry::instance();
+    // Check for pointer dereference assignment (*ptr = value) - requires unsafe block
+    if (dynamic_cast<DerefExpr*>(node.target.get())) {
+        if (!symbols_.inUnsafe()) {
+            error("Pointer dereference assignment requires unsafe block", node.location);
+        }
+    }
     
     // In Flex, x = value can be a variable declaration if x is not yet defined
     if (auto* id = dynamic_cast<Identifier*>(node.target.get())) {
@@ -387,6 +484,16 @@ void TypeChecker::visit(AssignExpr& node) {
               "' to '" + targetType->toString() + "'", node.location);
     }
     currentType_ = targetType;
+}
+
+void TypeChecker::visit(PropagateExpr& node) {
+    // The ? operator unwraps a Result type
+    // For now, we just infer the type of the operand
+    // A full implementation would check that operand is Result[T, E] and return T
+    TypePtr operandType = inferType(node.operand.get());
+    // For simplicity, assume the unwrapped type is the same as the operand
+    // (proper Result type handling would extract the Ok type)
+    currentType_ = operandType;
 }
 
 } // namespace flex

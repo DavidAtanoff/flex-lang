@@ -21,6 +21,8 @@ namespace fs = std::filesystem;
 
 // Track imported files to avoid circular imports
 std::set<std::string> importedFiles;
+// Track the import chain for cycle path reporting
+std::vector<std::string> importChain;
 
 void printUsage(const char* prog) {
     std::cout << "Flex Compiler v1.0\n";
@@ -91,11 +93,54 @@ void processImports(Program& program, const std::string& currentFile) {
             if (useStmt->isFileImport) {
                 std::string importPath = resolveImportPath(useStmt->layerName, currentFile);
                 
-                // Check for circular imports
+                // Normalize the path for consistent comparison
+                try {
+                    importPath = fs::canonical(importPath).string();
+                } catch (...) {
+                    // If canonical fails, use the resolved path as-is
+                }
+                
+                // Check for circular imports - if file is in the current import chain
+                bool isCircular = false;
+                for (const auto& chainFile : importChain) {
+                    if (chainFile == importPath) {
+                        isCircular = true;
+                        break;
+                    }
+                }
+                
+                if (isCircular) {
+                    // Build the cycle path for a clear error message
+                    std::string cyclePath;
+                    bool inCycle = false;
+                    for (const auto& chainFile : importChain) {
+                        if (chainFile == importPath) {
+                            inCycle = true;
+                        }
+                        if (inCycle) {
+                            if (!cyclePath.empty()) {
+                                cyclePath += " -> ";
+                            }
+                            // Extract just the filename for readability
+                            fs::path p(chainFile);
+                            cyclePath += p.filename().string();
+                        }
+                    }
+                    cyclePath += " -> " + fs::path(importPath).filename().string();
+                    
+                    std::cerr << currentFile << ":" << useStmt->location.line << ": error: "
+                              << "Circular import detected: " << cyclePath << "\n";
+                    continue;
+                }
+                
+                // Check if already imported (not circular, just already processed)
                 if (importedFiles.count(importPath)) {
                     continue;  // Already imported, skip
                 }
                 importedFiles.insert(importPath);
+                
+                // Add to import chain before processing
+                importChain.push_back(importPath);
                 
                 // Parse the imported file
                 try {
@@ -113,6 +158,9 @@ void processImports(Program& program, const std::string& currentFile) {
                 } catch (const FlexError& e) {
                     std::cerr << "Error importing '" << useStmt->layerName << "': " << e.what() << "\n";
                 }
+                
+                // Remove from import chain after processing
+                importChain.pop_back();
             } else {
                 // Keep non-file use statements
                 newStatements.push_back(std::move(stmt));
@@ -284,13 +332,27 @@ int main(int argc, char* argv[]) {
     try {
         // Clear imported files set for fresh compilation
         importedFiles.clear();
-        importedFiles.insert(filename);  // Mark main file as imported
+        importChain.clear();
+        
+        // Normalize the main filename
+        std::string normalizedFilename = filename;
+        try {
+            normalizedFilename = fs::canonical(filename).string();
+        } catch (...) {
+            // If canonical fails, use the filename as-is
+        }
+        
+        importedFiles.insert(normalizedFilename);  // Mark main file as imported
+        importChain.push_back(normalizedFilename);  // Add to import chain
         
         // Parse the main file
         auto ast = parseFile(filename);
         
         // Process imports (recursively loads and merges imported files)
-        processImports(*ast, filename);
+        processImports(*ast, normalizedFilename);
+        
+        // Clear import chain after processing
+        importChain.clear();
         
         // Re-lex for token display if needed
         if (showTokens) {

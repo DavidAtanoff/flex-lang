@@ -138,6 +138,12 @@ void MacroExpander::expandExpression(ExprPtr& expr) {
     else if (auto* record = dynamic_cast<RecordExpr*>(expr.get())) {
         for (auto& [name, value] : record->fields) expandExpression(value);
     }
+    else if (auto* map = dynamic_cast<MapExpr*>(expr.get())) {
+        for (auto& [key, value] : map->entries) {
+            expandExpression(key);
+            expandExpression(value);
+        }
+    }
     else if (auto* range = dynamic_cast<RangeExpr*>(expr.get())) {
         expandExpression(range->start);
         expandExpression(range->end);
@@ -167,6 +173,19 @@ void MacroExpander::expandExpression(ExprPtr& expr) {
     }
     else if (auto* cast = dynamic_cast<CastExpr*>(expr.get())) {
         expandExpression(cast->expr);
+    }
+    else if (auto* assign = dynamic_cast<AssignExpr*>(expr.get())) {
+        expandExpression(assign->target);
+        expandExpression(assign->value);
+    }
+    else if (auto* propagate = dynamic_cast<PropagateExpr*>(expr.get())) {
+        expandExpression(propagate->operand);
+    }
+    else if (auto* await = dynamic_cast<AwaitExpr*>(expr.get())) {
+        expandExpression(await->operand);
+    }
+    else if (auto* spawn = dynamic_cast<SpawnExpr*>(expr.get())) {
+        expandExpression(spawn->operand);
     }
 }
 
@@ -269,26 +288,28 @@ ExprPtr MacroExpander::transformDSLBlock(const std::string& dslName, const std::
     const DSLTransformInfo& transformer = it->second;
     std::string transformExpr = transformer.transformExpr;
     
-    size_t contentPos = transformExpr.find("$content");
-    if (contentPos != std::string::npos) {
-        size_t parenPos = transformExpr.find('(');
-        if (parenPos != std::string::npos && parenPos < contentPos) {
-            std::string calleeStr = transformExpr.substr(0, parenPos);
-            
-            while (!calleeStr.empty() && calleeStr.back() == ' ') calleeStr.pop_back();
-            while (!calleeStr.empty() && calleeStr.front() == ' ') calleeStr.erase(0, 1);
-            
-            for (char& c : calleeStr) {
-                if (c == '.') c = '_';
-            }
-            
-            auto callee = std::make_unique<Identifier>(calleeStr, loc);
-            auto call = std::make_unique<CallExpr>(std::move(callee), loc);
-            call->args.push_back(std::make_unique<StringLiteral>(content, loc));
-            return call;
+    // Look for function call pattern: func_name(content) or func_name($content)
+    size_t parenPos = transformExpr.find('(');
+    if (parenPos != std::string::npos) {
+        std::string calleeStr = transformExpr.substr(0, parenPos);
+        
+        // Trim whitespace
+        while (!calleeStr.empty() && calleeStr.back() == ' ') calleeStr.pop_back();
+        while (!calleeStr.empty() && calleeStr.front() == ' ') calleeStr.erase(0, 1);
+        
+        // Replace dots with underscores for member access
+        for (char& c : calleeStr) {
+            if (c == '.') c = '_';
         }
+        
+        // Create the function call with content as argument
+        auto callee = std::make_unique<Identifier>(calleeStr, loc);
+        auto call = std::make_unique<CallExpr>(std::move(callee), loc);
+        call->args.push_back(std::make_unique<StringLiteral>(content, loc));
+        return call;
     }
     
+    // If no parentheses, just return the content as a string
     return std::make_unique<StringLiteral>(content, loc);
 }
 

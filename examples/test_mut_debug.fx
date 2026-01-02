@@ -1,6 +1,14 @@
-// Test with mutable variable - debug
-println("Start")
-mut x = 42
-println("After mut")
-println("x = {x}")
-println("After print x")
+// Test mutable in function - debug
+fn test:
+    mut x = 42
+    mut y = 100
+    print("x = ")
+    print(x)
+    print(", y = ")
+    print(y)
+    println("")
+
+fn main:
+    test()
+
+main()

@@ -56,8 +56,10 @@ private:
     // Inline a specific call
     StmtPtr inlineCall(CallExpr* call, FnDecl* fn);
     ExprPtr inlineCallAsExpr(CallExpr* call, FnDecl* fn);  // For single-return functions
-    ExprPtr cloneExpression(Expression* expr, const std::map<std::string, Expression*>& argMap);
-    StmtPtr cloneStatement(Statement* stmt, const std::map<std::string, Expression*>& argMap);
+    ExprPtr cloneExpression(Expression* expr, const std::map<std::string, Expression*>& argMap, 
+                           std::map<std::string, std::string>& renameMap);
+    StmtPtr cloneStatement(Statement* stmt, const std::map<std::string, Expression*>& argMap,
+                          std::map<std::string, std::string>& renameMap);
     
     // Function database
     std::map<std::string, FunctionInfo> functions_;

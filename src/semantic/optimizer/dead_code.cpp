@@ -124,6 +124,10 @@ void DeadCodeEliminationPass::collectCallsFromExpression(Expression* expr, std::
         collectCallsFromExpression(assignExpr->target.get(), calls);
         collectCallsFromExpression(assignExpr->value.get(), calls);
     }
+    else if (auto* propagate = dynamic_cast<PropagateExpr*>(expr)) {
+        // Handle error propagation expressions (expr?)
+        collectCallsFromExpression(propagate->operand.get(), calls);
+    }
     else if (auto* binary = dynamic_cast<BinaryExpr*>(expr)) {
         collectCallsFromExpression(binary->left.get(), calls);
         collectCallsFromExpression(binary->right.get(), calls);
@@ -147,6 +151,12 @@ void DeadCodeEliminationPass::collectCallsFromExpression(Expression* expr, std::
     else if (auto* record = dynamic_cast<RecordExpr*>(expr)) {
         for (auto& field : record->fields) {
             collectCallsFromExpression(field.second.get(), calls);
+        }
+    }
+    else if (auto* map = dynamic_cast<MapExpr*>(expr)) {
+        for (auto& entry : map->entries) {
+            collectCallsFromExpression(entry.first.get(), calls);
+            collectCallsFromExpression(entry.second.get(), calls);
         }
     }
     else if (auto* listComp = dynamic_cast<ListCompExpr*>(expr)) {
@@ -330,6 +340,10 @@ void DeadCodeEliminationPass::collectFromExpression(Expression* expr) {
         collectFromExpression(assignExpr->target.get());
         collectFromExpression(assignExpr->value.get());
     }
+    else if (auto* propagate = dynamic_cast<PropagateExpr*>(expr)) {
+        // Handle error propagation expressions (expr?)
+        collectFromExpression(propagate->operand.get());
+    }
     else if (auto* member = dynamic_cast<MemberExpr*>(expr)) {
         collectFromExpression(member->object.get());
     }
@@ -345,6 +359,12 @@ void DeadCodeEliminationPass::collectFromExpression(Expression* expr) {
     else if (auto* record = dynamic_cast<RecordExpr*>(expr)) {
         for (auto& field : record->fields) {
             collectFromExpression(field.second.get());
+        }
+    }
+    else if (auto* map = dynamic_cast<MapExpr*>(expr)) {
+        for (auto& entry : map->entries) {
+            collectFromExpression(entry.first.get());
+            collectFromExpression(entry.second.get());
         }
     }
     else if (auto* ternary = dynamic_cast<TernaryExpr*>(expr)) {

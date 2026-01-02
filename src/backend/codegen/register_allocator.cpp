@@ -187,6 +187,14 @@ void RegisterAllocator::scanExpression(Expression* expr) {
             scanExpression(arg.get());
         }
     }
+    else if (auto* interp = dynamic_cast<InterpolatedString*>(expr)) {
+        // Scan all parts of the interpolated string for variable uses
+        for (auto& part : interp->parts) {
+            if (std::holds_alternative<ExprPtr>(part)) {
+                scanExpression(std::get<ExprPtr>(part).get());
+            }
+        }
+    }
     else if (auto* ternary = dynamic_cast<TernaryExpr*>(expr)) {
         scanExpression(ternary->condition.get());
         scanExpression(ternary->thenExpr.get());
@@ -205,6 +213,23 @@ void RegisterAllocator::scanExpression(Expression* expr) {
         if (range->step) {
             scanExpression(range->step.get());
         }
+    }
+    else if (auto* assign = dynamic_cast<AssignExpr*>(expr)) {
+        scanExpression(assign->value.get());
+        if (auto* targetId = dynamic_cast<Identifier*>(assign->target.get())) {
+            recordDef(targetId->name);
+        }
+    }
+    else if (auto* list = dynamic_cast<ListExpr*>(expr)) {
+        for (auto& elem : list->elements) {
+            scanExpression(elem.get());
+        }
+    }
+    else if (auto* addrOf = dynamic_cast<AddressOfExpr*>(expr)) {
+        scanExpression(addrOf->operand.get());
+    }
+    else if (auto* deref = dynamic_cast<DerefExpr*>(expr)) {
+        scanExpression(deref->operand.get());
     }
 }
 

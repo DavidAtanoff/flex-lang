@@ -56,6 +56,7 @@ private:
     // Declaration parsing (parser_declarations.cpp)
     StmtPtr declaration();
     StmtPtr fnDeclaration();
+    StmtPtr externFnDeclaration();
     StmtPtr recordDeclaration();
     StmtPtr enumDeclaration();
     StmtPtr typeAliasDeclaration();

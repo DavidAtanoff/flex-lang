@@ -8,6 +8,7 @@
 #include "backend/codegen/register_allocator.h"
 #include "backend/codegen/global_register_allocator.h"
 #include "backend/gc/gc.h"
+#include "semantic/generics/monomorphizer.h"
 #include <map>
 #include <set>
 
@@ -144,7 +145,7 @@ private:
     void emitStoreRaxToVar(const std::string& name);      // Store RAX to variable (to register or stack)
     void emitSaveCalleeSavedRegs();                       // Save used callee-saved registers
     void emitRestoreCalleeSavedRegs();                    // Restore used callee-saved registers
-    void emitMoveParamToVar(int paramIndex, const std::string& name);  // Move param register to variable location
+    void emitMoveParamToVar(int paramIndex, const std::string& name, const std::string& type);  // Move param register to variable location
     
     // Leaf function optimization helpers
     bool checkIsLeafFunction(Statement* body);            // Check if function makes no calls
@@ -166,6 +167,7 @@ private:
     struct TraitInfo {
         std::string name;
         std::vector<std::string> methodNames;             // Method names in order
+        std::vector<std::string> superTraits;             // Super traits (inheritance)
     };
     struct ImplInfo {
         std::string traitName;
@@ -175,10 +177,33 @@ private:
     std::map<std::string, TraitInfo> traits_;             // Trait name -> info
     std::map<std::string, ImplInfo> impls_;               // "trait:type" -> impl info
     std::map<std::string, uint32_t> vtables_;             // "trait:type" -> vtable RVA
+    std::map<std::string, std::vector<uint32_t>> vtableFixups_;  // "trait:type" -> list of fixup offsets
+    
+    // Trait dispatch helpers
+    void finalizeVtables();                               // Generate vtables with actual function pointers
+    void emitTraitMethodCall(const std::string& traitName, const std::string& methodName, 
+                             int argCount);               // Emit dynamic dispatch call
+    int getMethodIndex(const std::string& traitName, const std::string& methodName);  // Get method index in vtable
+    std::string resolveTraitMethod(const std::string& typeName, const std::string& traitName, 
+                                   const std::string& methodName);  // Resolve to concrete method label
     
     // Garbage collection support
     bool useGC_ = true;                                    // Enable GC for allocations
     bool gcInitEmitted_ = false;                           // Whether GC init code has been emitted
+    uint32_t gcDataRVA_ = 0;                               // RVA of GC data section globals
+    std::string gcCollectLabel_;                           // Label for GC collection routine
+    
+    // Generics / Monomorphization support
+    Monomorphizer monomorphizer_;                          // Tracks generic instantiations
+    std::unordered_map<std::string, FnDecl*> genericFunctions_;    // Generic function declarations
+    std::unordered_map<std::string, RecordDecl*> genericRecords_;  // Generic record declarations
+    std::vector<std::unique_ptr<FnDecl>> specializedFunctions_;    // Specialized function copies
+    std::vector<std::unique_ptr<RecordDecl>> specializedRecords_;  // Specialized record copies
+    
+    // Generics helper methods
+    void collectGenericInstantiations(Program& program);   // Collect all generic instantiations
+    void emitSpecializedFunctions();                       // Emit code for specialized functions
+    std::string resolveGenericCall(const std::string& fnName, const std::vector<TypePtr>& typeArgs);
     
     // GC helper methods
     void emitGCInit();                                     // Emit GC initialization at program start
@@ -187,8 +212,13 @@ private:
     void emitGCAllocList(size_t capacity);                 // Emit list allocation via GC
     void emitGCAllocRecord(size_t fieldCount);             // Emit record allocation via GC
     void emitGCAllocClosure(size_t captureCount);          // Emit closure allocation via GC
+    void emitGCAllocString(size_t len);                    // Emit string allocation via GC
+    void emitGCAllocMap(size_t capacity);                  // Emit map allocation via GC
+    void emitGCAllocMapEntry();                            // Emit map entry allocation via GC
+    void emitGCAllocRaw(size_t size);                      // Emit raw allocation via GC
     void emitGCPushFrame();                                // Emit stack frame push for GC
     void emitGCPopFrame();                                 // Emit stack frame pop for GC
+    void emitGCCollectRoutine();                           // Emit the GC collection routine (mark-and-sweep)
     
     void visit(IntegerLiteral& node) override;
     void visit(FloatLiteral& node) override;
@@ -204,6 +234,7 @@ private:
     void visit(IndexExpr& node) override;
     void visit(ListExpr& node) override;
     void visit(RecordExpr& node) override;
+    void visit(MapExpr& node) override;
     void visit(RangeExpr& node) override;
     void visit(LambdaExpr& node) override;
     void visit(TernaryExpr& node) override;
@@ -216,6 +247,7 @@ private:
     void visit(SpawnExpr& node) override;
     void visit(DSLBlock& node) override;
     void visit(AssignExpr& node) override;
+    void visit(PropagateExpr& node) override;
     void visit(ExprStmt& node) override;
     void visit(VarDecl& node) override;
     void visit(DestructuringDecl& node) override;

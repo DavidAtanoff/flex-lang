@@ -137,6 +137,15 @@ void Compiler::visit(RecordExpr& node) {
     emitOp(OpCode::MAKE_RECORD, static_cast<int32_t>(node.fields.size()));
 }
 
+void Compiler::visit(MapExpr& node) {
+    // Push all key-value pairs onto stack
+    for (auto& entry : node.entries) {
+        entry.first->accept(*this);   // key
+        entry.second->accept(*this);  // value
+    }
+    emitOp(OpCode::MAKE_MAP, static_cast<int32_t>(node.entries.size()));
+}
+
 void Compiler::visit(RangeExpr& node) {
     node.start->accept(*this);
     node.end->accept(*this);
@@ -246,6 +255,22 @@ void Compiler::visit(AssignExpr& node) {
         idxExpr->index->accept(*this);
         emit(OpCode::SET_INDEX);
     }
+}
+
+void Compiler::visit(PropagateExpr& node) {
+    // Error propagation operator (?)
+    // For bytecode VM, we need to:
+    // 1. Evaluate the operand
+    // 2. Check if it's an error
+    // 3. If error, return early
+    // 4. If Ok, unwrap the value
+    
+    // For now, just evaluate the operand and unwrap
+    // (full implementation would need VM support for early return)
+    node.operand->accept(*this);
+    
+    // The VM would need to handle Result types properly
+    // For now, this is a simplified implementation
 }
 
 } // namespace flex

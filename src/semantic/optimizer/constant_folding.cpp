@@ -206,6 +206,14 @@ ExprPtr ConstantFoldingPass::foldExpression(ExprPtr& expr) {
             if (folded) field.second = std::move(folded);
         }
     }
+    else if (auto* map = dynamic_cast<MapExpr*>(expr.get())) {
+        for (auto& entry : map->entries) {
+            auto keyFolded = foldExpression(entry.first);
+            if (keyFolded) entry.first = std::move(keyFolded);
+            auto valFolded = foldExpression(entry.second);
+            if (valFolded) entry.second = std::move(valFolded);
+        }
+    }
     else if (auto* index = dynamic_cast<IndexExpr*>(expr.get())) {
         auto objFolded = foldExpression(index->object);
         if (objFolded) index->object = std::move(objFolded);

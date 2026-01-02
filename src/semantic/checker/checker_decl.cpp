@@ -35,12 +35,15 @@ void TypeChecker::visit(FnDecl& node) {
     symbols_.pushScope(Scope::Kind::FUNCTION);
     for (size_t i = 0; i < node.params.size(); i++) {
         Symbol paramSym(node.params[i].first, SymbolKind::PARAMETER, fnType->params[i].second);
+        paramSym.location = node.location;  // Use function location for params
+        paramSym.isParameter = true;
         symbols_.define(paramSym);
     }
     expectedReturn_ = fnType->returnType;
     if (node.body) {
         node.body->accept(*this);
     }
+    checkUnusedVariables(symbols_.currentScope());  // Check for unused variables/params
     symbols_.popScope();
     
     // Restore type parameter scope
@@ -101,6 +104,7 @@ void TypeChecker::visit(TraitDecl& node) {
     auto& reg = TypeRegistry::instance();
     auto trait = std::make_shared<TraitType>(node.name);
     trait->typeParams = node.typeParams;
+    trait->superTraits = node.superTraits;
     
     // Push type parameters into scope for method parsing
     std::vector<std::string> savedTypeParamNames = currentTypeParamNames_;
@@ -113,6 +117,14 @@ void TypeChecker::visit(TraitDecl& node) {
     // Add implicit Self type parameter
     currentTypeParamNames_.push_back("Self");
     currentTypeParams_["Self"] = reg.typeParamType("Self");
+    
+    // Validate super traits exist
+    for (const auto& superTrait : node.superTraits) {
+        TraitPtr superTraitType = reg.lookupTrait(superTrait);
+        if (!superTraitType) {
+            error("Unknown super trait '" + superTrait + "'", node.location);
+        }
+    }
     
     // Process trait methods
     for (auto& method : node.methods) {
@@ -248,9 +260,32 @@ void TypeChecker::visit(LayerDecl& node) {
 
 void TypeChecker::visit(UseStmt&) {}
 void TypeChecker::visit(ModuleDecl& node) {
-    // Type check all declarations in the module
+    auto& reg = TypeRegistry::instance();
+    
+    // Create a module type to represent the module
+    auto moduleType = std::make_shared<Type>(TypeKind::ANY);  // Use ANY for now
+    
+    // Register the module name as a symbol so it can be referenced
+    Symbol moduleSym(node.name, SymbolKind::MODULE, moduleType);
+    symbols_.define(moduleSym);
+    
+    // Type check all declarations in the module and register qualified names
     for (auto& stmt : node.body) {
-        stmt->accept(*this);
+        // For functions, also register with qualified name (module.function)
+        if (auto* fn = dynamic_cast<FnDecl*>(stmt.get())) {
+            // First visit the function to register it
+            stmt->accept(*this);
+            
+            // Also register with qualified name for module.function() calls
+            Symbol* fnSym = symbols_.lookup(fn->name);
+            if (fnSym) {
+                std::string qualifiedName = node.name + "." + fn->name;
+                Symbol qualifiedSym(qualifiedName, SymbolKind::FUNCTION, fnSym->type);
+                symbols_.define(qualifiedSym);
+            }
+        } else {
+            stmt->accept(*this);
+        }
     }
 }
 

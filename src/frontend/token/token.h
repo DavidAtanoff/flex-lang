@@ -27,6 +27,7 @@ enum class TokenType {
     COLON, COMMA, SEMICOLON, LPAREN, RPAREN,
     LBRACKET, RBRACKET, LBRACE, RBRACE,
     NEWLINE, INDENT, DEDENT,
+    CUSTOM_OP,
     END_OF_FILE, ERROR
 };
 
@@ -72,7 +73,8 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::LBRACKET: return "LBRACKET"; case TokenType::RBRACKET: return "RBRACKET";
         case TokenType::LBRACE: return "LBRACE"; case TokenType::RBRACE: return "RBRACE";
         case TokenType::NEWLINE: return "NEWLINE"; case TokenType::INDENT: return "INDENT";
-        case TokenType::DEDENT: return "DEDENT"; case TokenType::END_OF_FILE: return "EOF";
+        case TokenType::DEDENT: return "DEDENT"; case TokenType::CUSTOM_OP: return "CUSTOM_OP";
+        case TokenType::END_OF_FILE: return "EOF";
         case TokenType::ERROR: return "ERROR"; default: return "UNKNOWN";
     }
 }

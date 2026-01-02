@@ -53,6 +53,11 @@ private:
     bool isDigit(char c) const { return c >= '0' && c <= '9'; }
     bool isAlpha(char c) const { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
     bool isAlphaNumeric(char c) const { return isAlpha(c) || isDigit(c); }
+    bool isOperatorChar(char c) const { 
+        return c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || 
+               c == '<' || c == '>' || c == '=' || c == '!' || c == '&' || 
+               c == '|' || c == '^' || c == '~' || c == '@' || c == '#';
+    }
 };
 
 } // namespace flex

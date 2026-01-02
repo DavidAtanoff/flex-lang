@@ -312,7 +312,71 @@ TypePtr TypeRegistry::listType(TypePtr element) { return std::make_shared<ListTy
 TypePtr TypeRegistry::mapType(TypePtr key, TypePtr value) { return std::make_shared<MapType>(std::move(key), std::move(value)); }
 TypePtr TypeRegistry::recordType(const std::string& name) { return std::make_shared<RecordType>(name); }
 TypePtr TypeRegistry::functionType() { return std::make_shared<FunctionType>(); }
-TypePtr TypeRegistry::fromString(const std::string& str) { auto it = namedTypes_.find(str); return it != namedTypes_.end() ? it->second : unknown_; }
+TypePtr TypeRegistry::fromString(const std::string& str) {
+    // Handle empty string
+    if (str.empty()) return unknown_;
+    
+    // Handle pointer types: *T, **T, etc.
+    if (str[0] == '*') {
+        std::string pointeeStr = str.substr(1);
+        TypePtr pointee = fromString(pointeeStr);
+        return ptrType(pointee, true);  // raw pointer
+    }
+    
+    // Handle reference types: &T, &mut T
+    if (str[0] == '&') {
+        std::string rest = str.substr(1);
+        bool isMut = false;
+        if (rest.size() > 4 && rest.substr(0, 4) == "mut ") {
+            isMut = true;
+            rest = rest.substr(4);
+        }
+        TypePtr pointee = fromString(rest);
+        auto ref = refType(pointee);
+        ref->isMutable = isMut;
+        return ref;
+    }
+    
+    // Handle ptr<T> syntax (legacy)
+    if (str.size() > 4 && str.substr(0, 4) == "ptr<" && str.back() == '>') {
+        std::string pointeeStr = str.substr(4, str.size() - 5);
+        TypePtr pointee = fromString(pointeeStr);
+        return ptrType(pointee, true);
+    }
+    
+    // Handle ref<T> syntax
+    if (str.size() > 4 && str.substr(0, 4) == "ref<" && str.back() == '>') {
+        std::string pointeeStr = str.substr(4, str.size() - 5);
+        TypePtr pointee = fromString(pointeeStr);
+        return refType(pointee);
+    }
+    
+    // Handle list types: [T]
+    if (str.size() > 2 && str[0] == '[' && str.back() == ']') {
+        std::string elemStr = str.substr(1, str.size() - 2);
+        TypePtr elem = fromString(elemStr);
+        return listType(elem);
+    }
+    
+    // Handle function pointer types: fn(...) -> T
+    if (str.size() > 2 && str.substr(0, 2) == "fn") {
+        // For now, return a generic function type
+        return functionType();
+    }
+    
+    // Handle nullable types: T?
+    if (str.size() > 1 && str.back() == '?') {
+        std::string baseStr = str.substr(0, str.size() - 1);
+        TypePtr base = fromString(baseStr);
+        auto result = base->clone();
+        result->isNullable = true;
+        return result;
+    }
+    
+    // Look up named type
+    auto it = namedTypes_.find(str);
+    return it != namedTypes_.end() ? it->second : unknown_;
+}
 void TypeRegistry::registerType(const std::string& name, TypePtr type) { namedTypes_[name] = std::move(type); }
 TypePtr TypeRegistry::lookupType(const std::string& name) { auto it = namedTypes_.find(name); return it != namedTypes_.end() ? it->second : nullptr; }
 

@@ -8,18 +8,59 @@ namespace flex {
 std::string Parser::parseType() {
     std::string type;
     
-    if (match(TokenType::PTR)) {
+    // C-style pointer: *int, *str, **int (pointer to pointer)
+    if (match(TokenType::STAR)) {
+        type = "*" + parseType();
+    }
+    // Reference type: &T, &mut T
+    else if (match(TokenType::AMP)) {
+        bool isMut = match(TokenType::MUT);
+        type = (isMut ? "&mut " : "&") + parseType();
+    }
+    // Verbose pointer: ptr<T>
+    else if (match(TokenType::PTR)) {
         consume(TokenType::LT, "Expected '<' after ptr");
-        type = "ptr<" + parseType() + ">";
+        type = "*" + parseType();  // Normalize to *T internally
         consume(TokenType::GT, "Expected '>' after ptr type");
-    } else if (match(TokenType::REF)) {
+    }
+    // Reference: ref<T>
+    else if (match(TokenType::REF)) {
         consume(TokenType::LT, "Expected '<' after ref");
         type = "ref<" + parseType() + ">";
         consume(TokenType::GT, "Expected '>' after ref type");
-    } else if (match(TokenType::LBRACKET)) {
+    }
+    // List type: [T]
+    else if (match(TokenType::LBRACKET)) {
         type = "[" + parseType() + "]";
         consume(TokenType::RBRACKET, "Expected ']' after list type");
-    } else if (check(TokenType::IDENTIFIER)) {
+    }
+    // Function pointer: fn(int, int) -> int
+    else if (match(TokenType::FN)) {
+        type = "fn(";
+        if (match(TokenType::LPAREN)) {
+            bool first = true;
+            while (!check(TokenType::RPAREN) && !isAtEnd()) {
+                if (!first) type += ", ";
+                first = false;
+                // Check for variadic
+                if (match(TokenType::DOTDOT)) {
+                    if (match(TokenType::DOT) || check(TokenType::RPAREN)) {
+                        type += "...";
+                    }
+                } else {
+                    type += parseType();
+                }
+                if (!match(TokenType::COMMA)) break;
+            }
+            consume(TokenType::RPAREN, "Expected ')' after function parameters");
+        }
+        type += ")";
+        if (match(TokenType::ARROW)) {
+            type += " -> " + parseType();
+        }
+    }
+    // Named type or generic
+    else if (check(TokenType::IDENTIFIER)) {
         type = advance().lexeme;
         if (match(TokenType::LT)) {
             type += "<" + parseType();
@@ -31,6 +72,7 @@ std::string Parser::parseType() {
         }
     }
     
+    // Nullable modifier
     if (match(TokenType::QUESTION)) {
         type += "?";
     }

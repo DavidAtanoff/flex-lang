@@ -1,7 +1,9 @@
 // Flex Compiler - Garbage Collector Implementation
-// Mark-and-sweep garbage collector
+// Mark-and-sweep garbage collector with proper runtime integration
+// Supports custom allocators for flexible memory management
 
 #include "gc.h"
+#include "allocator.h"
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
@@ -10,6 +12,14 @@ namespace flex {
 
 // Global GC instance
 GarbageCollector* g_gc = nullptr;
+
+// GC enabled flag (can be toggled at runtime)
+static bool gcEnabled = true;
+
+// Custom allocator function pointers (nullptr = use default)
+static AllocFn g_customAlloc = nullptr;
+static FreeFn g_customFree = nullptr;
+static void* g_customAllocUserData = nullptr;
 
 // Stack frame tracking for conservative scanning
 static thread_local std::vector<void**> stackFrames;
@@ -31,7 +41,6 @@ void GarbageCollector::init(size_t initialHeapSize) {
     heapSize_ = initialHeapSize;
     heap_ = static_cast<uint8_t*>(std::malloc(heapSize_));
     if (!heap_) {
-        // Fallback to smaller heap
         heapSize_ = 256 * 1024;
         heap_ = static_cast<uint8_t*>(std::malloc(heapSize_));
     }
@@ -68,21 +77,33 @@ void* GarbageCollector::alloc(size_t size, GCObjectType type) {
     if (!initialized_) init();
     
     // Check if we should collect
-    if (shouldCollect()) {
+    if (gcEnabled && shouldCollect()) {
         collect();
     }
     
     // Allocate header + user data
     size_t totalSize = sizeof(GCObjectHeader) + size;
+    totalSize = (totalSize + 7) & ~7;  // Align to 8 bytes
     
-    // Align to 8 bytes
-    totalSize = (totalSize + 7) & ~7;
+    GCObjectHeader* header = nullptr;
     
-    GCObjectHeader* header = static_cast<GCObjectHeader*>(std::malloc(totalSize));
+    // Use custom allocator if set, otherwise use system malloc
+    if (g_customAlloc) {
+        header = static_cast<GCObjectHeader*>(g_customAlloc(totalSize, 8));
+        if (header) std::memset(header, 0, totalSize);
+    } else {
+        header = static_cast<GCObjectHeader*>(std::malloc(totalSize));
+    }
+    
     if (!header) {
         // Try collecting and retry
         collectFull();
-        header = static_cast<GCObjectHeader*>(std::malloc(totalSize));
+        if (g_customAlloc) {
+            header = static_cast<GCObjectHeader*>(g_customAlloc(totalSize, 8));
+            if (header) std::memset(header, 0, totalSize);
+        } else {
+            header = static_cast<GCObjectHeader*>(std::malloc(totalSize));
+        }
         if (!header) {
             return nullptr;  // Out of memory
         }
@@ -110,7 +131,6 @@ void* GarbageCollector::alloc(size_t size, GCObjectType type) {
 }
 
 void* GarbageCollector::allocAligned(size_t size, size_t alignment, GCObjectType type) {
-    // For now, just use regular alloc (already 8-byte aligned)
     (void)alignment;
     return alloc(size, type);
 }
@@ -173,15 +193,17 @@ bool GarbageCollector::shouldCollect() const {
 }
 
 void GarbageCollector::collect() {
+    if (!gcEnabled) return;
     mark();
     sweep();
     stats_.totalCollections++;
 }
 
 void GarbageCollector::collectFull() {
-    // For now, same as regular collect
-    // Future: could do multiple generations
+    bool wasEnabled = gcEnabled;
+    gcEnabled = true;
     collect();
+    gcEnabled = wasEnabled;
 }
 
 void GarbageCollector::mark() {
@@ -210,13 +232,8 @@ void GarbageCollector::mark() {
     
     // Mark from stack frames
     for (void** frame : stackFrames) {
-        // Scan from frame to current stack position
-        // This is conservative - we treat anything that looks like a pointer as one
-        void** current = frame;
-        // Note: In a real implementation, we'd scan from frame base to stack top
-        // For now, just check the frame pointer itself
-        if (current && *current && isManaged(*current)) {
-            markObject(getHeader(*current));
+        if (frame && *frame && isManaged(*frame)) {
+            markObject(getHeader(*frame));
         }
     }
 }
@@ -225,8 +242,6 @@ void GarbageCollector::markObject(GCObjectHeader* obj) {
     if (!obj || obj->marked) return;
     
     obj->marked = 1;
-    
-    // Trace contained pointers based on type
     traceObject(obj);
 }
 
@@ -236,11 +251,9 @@ void GarbageCollector::traceObject(GCObjectHeader* obj) {
     switch (static_cast<GCObjectType>(obj->type)) {
         case GCObjectType::RAW:
         case GCObjectType::STRING:
-            // No pointers to trace
             break;
             
         case GCObjectType::LIST: {
-            // List layout: [int64 count, int64 capacity, ptr elements[capacity]]
             int64_t* listData = static_cast<int64_t*>(userData);
             int64_t count = listData[0];
             void** elements = reinterpret_cast<void**>(&listData[2]);
@@ -254,7 +267,6 @@ void GarbageCollector::traceObject(GCObjectHeader* obj) {
         }
         
         case GCObjectType::RECORD: {
-            // Record layout: [int64 fieldCount, ptr fields[fieldCount]]
             int64_t* recData = static_cast<int64_t*>(userData);
             int64_t fieldCount = recData[0];
             void** fields = reinterpret_cast<void**>(&recData[1]);
@@ -268,9 +280,7 @@ void GarbageCollector::traceObject(GCObjectHeader* obj) {
         }
         
         case GCObjectType::CLOSURE: {
-            // Closure layout: [ptr fnPtr, int64 captureCount, ptr captures[captureCount]]
             void** closureData = static_cast<void**>(userData);
-            // Skip function pointer (index 0)
             int64_t captureCount = reinterpret_cast<int64_t>(closureData[1]);
             void** captures = &closureData[2];
             
@@ -283,7 +293,6 @@ void GarbageCollector::traceObject(GCObjectHeader* obj) {
         }
         
         case GCObjectType::ARRAY: {
-            // Array of pointers
             size_t count = obj->size / sizeof(void*);
             void** ptrs = static_cast<void**>(userData);
             
@@ -296,7 +305,6 @@ void GarbageCollector::traceObject(GCObjectHeader* obj) {
         }
         
         case GCObjectType::BOX: {
-            // Single boxed pointer
             void** boxed = static_cast<void**>(userData);
             if (*boxed && isManaged(*boxed)) {
                 markObject(getHeader(*boxed));
@@ -315,15 +323,19 @@ void GarbageCollector::sweep() {
         GCObjectHeader* obj = *objPtr;
         
         if (!obj->marked && !(obj->flags & GC_FLAG_PINNED)) {
-            // Remove from list and free
             *objPtr = obj->next;
-            
             freedBytes += obj->size;
             freedCount++;
             
-            std::free(obj);
+            // Use custom free if set, otherwise use system free
+            size_t totalSize = sizeof(GCObjectHeader) + obj->size;
+            totalSize = (totalSize + 7) & ~7;
+            if (g_customFree) {
+                g_customFree(obj, totalSize);
+            } else {
+                std::free(obj);
+            }
         } else {
-            // Keep object, clear mark for next cycle
             obj->marked = 0;
             objPtr = &obj->next;
         }
@@ -348,19 +360,17 @@ void* flex_gc_alloc_string(size_t len) {
 }
 
 void* flex_gc_alloc_list(size_t capacity) {
-    // List: count (8) + capacity (8) + elements (capacity * 8)
     size_t size = 16 + capacity * 8;
     void* ptr = flex_gc_alloc(size, static_cast<uint16_t>(GCObjectType::LIST));
     if (ptr) {
         int64_t* data = static_cast<int64_t*>(ptr);
-        data[0] = 0;          // count = 0
-        data[1] = capacity;   // capacity
+        data[0] = 0;
+        data[1] = capacity;
     }
     return ptr;
 }
 
 void* flex_gc_alloc_record(size_t fieldCount) {
-    // Record: fieldCount (8) + fields (fieldCount * 8)
     size_t size = 8 + fieldCount * 8;
     void* ptr = flex_gc_alloc(size, static_cast<uint16_t>(GCObjectType::RECORD));
     if (ptr) {
@@ -371,13 +381,12 @@ void* flex_gc_alloc_record(size_t fieldCount) {
 }
 
 void* flex_gc_alloc_closure(size_t captureCount) {
-    // Closure: fnPtr (8) + captureCount (8) + captures (captureCount * 8)
     size_t size = 16 + captureCount * 8;
     void* ptr = flex_gc_alloc(size, static_cast<uint16_t>(GCObjectType::CLOSURE));
     if (ptr) {
         int64_t* data = static_cast<int64_t*>(ptr);
-        data[0] = 0;              // fnPtr (set later)
-        data[1] = captureCount;   // captureCount
+        data[0] = 0;
+        data[1] = captureCount;
     }
     return ptr;
 }
@@ -411,12 +420,42 @@ void flex_gc_shutdown() {
     }
 }
 
+void flex_gc_enable() {
+    gcEnabled = true;
+}
+
+void flex_gc_disable() {
+    gcEnabled = false;
+}
+
+size_t flex_gc_stats() {
+    if (g_gc) {
+        return g_gc->getStats().totalAllocated;
+    }
+    return 0;
+}
+
 void flex_gc_write_barrier(void* obj, void* field, void* newValue) {
-    // For future generational GC
-    // Currently a no-op for mark-and-sweep
     (void)obj;
     (void)field;
     (void)newValue;
+}
+
+// Custom allocator API
+void flex_gc_set_allocator(AllocFn alloc, FreeFn free, void* userData) {
+    g_customAlloc = alloc;
+    g_customFree = free;
+    g_customAllocUserData = userData;
+}
+
+void flex_gc_reset_allocator() {
+    g_customAlloc = nullptr;
+    g_customFree = nullptr;
+    g_customAllocUserData = nullptr;
+}
+
+void* flex_gc_get_allocator_userdata() {
+    return g_customAllocUserData;
 }
 
 } // extern "C"

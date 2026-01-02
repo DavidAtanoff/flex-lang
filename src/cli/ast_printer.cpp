@@ -69,6 +69,19 @@ void ASTPrinter::visit(RecordExpr& n) {
     indent--;
 }
 
+void ASTPrinter::visit(MapExpr& n) {
+    print("MapExpr");
+    indent++;
+    for (auto& [key, val] : n.entries) {
+        print("Entry:");
+        indent++;
+        key->accept(*this);
+        val->accept(*this);
+        indent--;
+    }
+    indent--;
+}
+
 void ASTPrinter::visit(RangeExpr& n) {
     print("RangeExpr");
     indent++; n.start->accept(*this); n.end->accept(*this);
@@ -319,6 +332,11 @@ void printBytecode(Chunk& chunk) {
 void ASTPrinter::visit(AssignExpr& n) {
     print("AssignExpr: " + tokenTypeToString(n.op));
     indent++; n.target->accept(*this); n.value->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(PropagateExpr& n) {
+    print("PropagateExpr (?)");
+    indent++; n.operand->accept(*this); indent--;
 }
 
 } // namespace flex

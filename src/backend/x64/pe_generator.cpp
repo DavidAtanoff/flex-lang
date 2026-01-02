@@ -1,6 +1,7 @@
 // Flex Compiler - PE Generator Implementation
 #include "pe_generator.h"
 #include <cstring>
+#include <iostream>
 
 namespace flex {
 
@@ -56,7 +57,12 @@ uint32_t PEGenerator::addQword(uint64_t value) {
 }
 
 void PEGenerator::addImport(const std::string& dll, const std::string& function) {
-    imports[dll].push_back(function);
+    // Check if this function is already imported from this DLL
+    auto& funcs = imports[dll];
+    for (const auto& f : funcs) {
+        if (f == function) return;  // Already imported, skip duplicate
+    }
+    funcs.push_back(function);
 }
 
 void PEGenerator::finalizeImports() {
@@ -181,6 +187,34 @@ void PEGenerator::applyFixups() {
     }
 }
 
+void PEGenerator::addVtableFixup(uint32_t dataRVA, const std::string& label) {
+    VtableFixup fixup;
+    // Convert from placeholder RVA to actual data section offset
+    fixup.dataOffset = dataRVA - DATA_RVA_PLACEHOLDER;
+    fixup.label = label;
+    vtableFixups.push_back(fixup);
+}
+
+void PEGenerator::setLabelOffsets(const std::map<std::string, size_t>& labels) {
+    labelOffsets_ = labels;
+}
+
+void PEGenerator::applyVtableFixups() {
+    // Apply vtable fixups - write function addresses into data section
+    for (const auto& fixup : vtableFixups) {
+        auto it = labelOffsets_.find(fixup.label);
+        if (it == labelOffsets_.end()) continue;
+        
+        // Calculate absolute address: IMAGE_BASE + CODE_RVA + label_offset
+        uint64_t funcAddr = IMAGE_BASE + CODE_RVA + it->second;
+        
+        // Write to data section at the specified offset
+        if (fixup.dataOffset + 8 <= dataSection.size()) {
+            memcpy(&dataSection[fixup.dataOffset], &funcAddr, 8);
+        }
+    }
+}
+
 bool PEGenerator::write(const std::string& filename) {
     std::ofstream file(filename, std::ios::binary);
     if (!file) return false;
@@ -190,6 +224,9 @@ bool PEGenerator::write(const std::string& filename) {
     
     // Apply fixups using tracked locations only (no blind scanning)
     applyFixups();
+    
+    // Apply vtable fixups (write function addresses into data section)
+    applyVtableFixups();
     
     buildImportSection();
     

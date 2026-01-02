@@ -46,6 +46,7 @@ private:
     void note(const std::string& msg, const SourceLocation& loc);
     TypePtr parseTypeAnnotation(const std::string& str);
     void registerBuiltins();  // Register built-in functions
+    void checkUnusedVariables(Scope* scope);  // Check for unused variables in scope
     
     // Generic and trait type checking
     TypePtr parseGenericType(const std::string& str);
@@ -69,6 +70,7 @@ private:
     void visit(IndexExpr& node) override;
     void visit(ListExpr& node) override;
     void visit(RecordExpr& node) override;
+    void visit(MapExpr& node) override;
     void visit(RangeExpr& node) override;
     void visit(LambdaExpr& node) override;
     void visit(TernaryExpr& node) override;
@@ -81,6 +83,7 @@ private:
     void visit(SpawnExpr& node) override;
     void visit(DSLBlock& node) override;
     void visit(AssignExpr& node) override;
+    void visit(PropagateExpr& node) override;
     void visit(ExprStmt& node) override;
     void visit(VarDecl& node) override;
     void visit(DestructuringDecl& node) override;

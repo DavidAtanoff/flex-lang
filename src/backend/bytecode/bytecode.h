@@ -14,7 +14,7 @@ enum class OpCode : uint8_t {
     NOT, AND, OR,
     JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, LOOP,
     CALL, RETURN,
-    MAKE_LIST, MAKE_RECORD, MAKE_RANGE, GET_INDEX, SET_INDEX, GET_MEMBER, SET_MEMBER,
+    MAKE_LIST, MAKE_RECORD, MAKE_MAP, MAKE_RANGE, GET_INDEX, SET_INDEX, GET_MEMBER, SET_MEMBER,
     GET_ITER, ITER_NEXT,
     PRINT, HALT
 };
@@ -51,6 +51,7 @@ inline std::string opCodeToString(OpCode op) {
         case OpCode::JUMP_IF_TRUE: return "JUMP_IF_TRUE"; case OpCode::LOOP: return "LOOP";
         case OpCode::CALL: return "CALL"; case OpCode::RETURN: return "RETURN";
         case OpCode::MAKE_LIST: return "MAKE_LIST"; case OpCode::MAKE_RECORD: return "MAKE_RECORD";
+        case OpCode::MAKE_MAP: return "MAKE_MAP";
         case OpCode::MAKE_RANGE: return "MAKE_RANGE"; case OpCode::GET_INDEX: return "GET_INDEX";
         case OpCode::SET_INDEX: return "SET_INDEX"; case OpCode::GET_MEMBER: return "GET_MEMBER";
         case OpCode::SET_MEMBER: return "SET_MEMBER"; case OpCode::GET_ITER: return "GET_ITER";

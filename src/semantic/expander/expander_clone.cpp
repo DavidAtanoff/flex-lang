@@ -95,6 +95,15 @@ ExprPtr MacroExpander::cloneExpr(Expression* expr, const std::unordered_map<std:
         return newRecord;
     }
     
+    if (auto* map = dynamic_cast<MapExpr*>(expr)) {
+        auto newMap = std::make_unique<MapExpr>(map->location);
+        for (auto& entry : map->entries) {
+            newMap->entries.push_back({cloneExpr(entry.first.get(), params), 
+                                       cloneExpr(entry.second.get(), params)});
+        }
+        return newMap;
+    }
+    
     if (auto* range = dynamic_cast<RangeExpr*>(expr)) {
         return std::make_unique<RangeExpr>(
             cloneExpr(range->start.get(), params),
@@ -125,6 +134,12 @@ ExprPtr MacroExpander::cloneExpr(Expression* expr, const std::unordered_map<std:
             assign->op,
             cloneExpr(assign->value.get(), params),
             assign->location);
+    }
+    
+    if (auto* propagate = dynamic_cast<PropagateExpr*>(expr)) {
+        return std::make_unique<PropagateExpr>(
+            cloneExpr(propagate->operand.get(), params),
+            propagate->location);
     }
     
     if (auto* addrOf = dynamic_cast<AddressOfExpr*>(expr)) {

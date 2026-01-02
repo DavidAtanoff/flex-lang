@@ -43,6 +43,7 @@ private:
     void visit(IndexExpr& node) override;
     void visit(ListExpr& node) override;
     void visit(RecordExpr& node) override;
+    void visit(MapExpr& node) override;
     void visit(RangeExpr& node) override;
     void visit(LambdaExpr& node) override;
     void visit(TernaryExpr& node) override;
@@ -55,6 +56,7 @@ private:
     void visit(SpawnExpr& node) override;
     void visit(DSLBlock& node) override;
     void visit(AssignExpr& node) override;
+    void visit(PropagateExpr& node) override;
     void visit(ExprStmt& node) override;
     void visit(VarDecl& node) override;
     void visit(DestructuringDecl& node) override;

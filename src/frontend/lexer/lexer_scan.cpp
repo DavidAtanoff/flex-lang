@@ -163,14 +163,44 @@ void Lexer::scanToken() {
         case '}': addToken(TokenType::RBRACE); break;
         case ',': addToken(TokenType::COMMA); break;
         case ';': addToken(TokenType::SEMICOLON); break;
-        case '%': addToken(TokenType::PERCENT); break;
+        case '%':
+            if (peek() == '%') {
+                std::string opStr = "%";
+                while (!isAtEnd() && peek() == '%') {
+                    opStr += advance();
+                }
+                addToken(TokenType::CUSTOM_OP, opStr);
+            } else {
+                addToken(TokenType::PERCENT);
+            }
+            break;
         case '~': addToken(TokenType::TILDE); break;
-        case '^': addToken(TokenType::CARET); break;
+        case '^':
+            if (peek() == '^') {
+                std::string opStr = "^";
+                while (!isAtEnd() && peek() == '^') {
+                    opStr += advance();
+                }
+                addToken(TokenType::CUSTOM_OP, opStr);
+            } else {
+                addToken(TokenType::CARET);
+            }
+            break;
         case '?':
             if (match('?')) addToken(TokenType::QUESTION_QUESTION);
             else addToken(TokenType::QUESTION);
             break;
-        case '@': addToken(TokenType::AT); break;
+        case '@':
+            if (peek() == '@') {
+                std::string opStr = "@";
+                while (!isAtEnd() && peek() == '@') {
+                    opStr += advance();
+                }
+                addToken(TokenType::CUSTOM_OP, opStr);
+            } else {
+                addToken(TokenType::AT);
+            }
+            break;
         case '$':
             if (isAlpha(peek())) scanTemplateVar();
             else addToken(TokenType::DOLLAR);
@@ -180,14 +210,39 @@ void Lexer::scanToken() {
             else addToken(TokenType::COLON);
             break;
         case '+':
-            addToken(match('=') ? TokenType::PLUS_ASSIGN : TokenType::PLUS);
+            if (peek() == '+') {
+                std::string opStr = "+";
+                while (!isAtEnd() && peek() == '+') {
+                    opStr += advance();
+                }
+                addToken(TokenType::CUSTOM_OP, opStr);
+            } else {
+                addToken(match('=') ? TokenType::PLUS_ASSIGN : TokenType::PLUS);
+            }
             break;
         case '-':
             if (match('>')) addToken(TokenType::ARROW);
-            else addToken(match('=') ? TokenType::MINUS_ASSIGN : TokenType::MINUS);
+            else if (peek() == '-') {
+                std::string opStr = "-";
+                while (!isAtEnd() && peek() == '-') {
+                    opStr += advance();
+                }
+                addToken(TokenType::CUSTOM_OP, opStr);
+            } else {
+                addToken(match('=') ? TokenType::MINUS_ASSIGN : TokenType::MINUS);
+            }
             break;
         case '*':
-            addToken(match('=') ? TokenType::STAR_ASSIGN : TokenType::STAR);
+            if (match('*')) {
+                // Check for more operator chars to form custom op like *** or **=
+                std::string opStr = "**";
+                while (!isAtEnd() && isOperatorChar(peek())) {
+                    opStr += advance();
+                }
+                addToken(TokenType::CUSTOM_OP, opStr);
+            } else {
+                addToken(match('=') ? TokenType::STAR_ASSIGN : TokenType::STAR);
+            }
             break;
         case '/':
             if (match('/')) scanComment();

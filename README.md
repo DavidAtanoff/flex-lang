@@ -978,6 +978,95 @@ unsafe:
     free(buffer)
 ```
 
+### Stack Allocation
+
+```flex
+unsafe:
+    // Allocate memory on the stack (faster, auto-freed on function return)
+    buffer = stackalloc(256)
+    // Use buffer...
+    // No need to free - automatically released when function returns
+```
+
+### Placement New
+
+```flex
+unsafe:
+    // Allocate raw memory
+    ptr = alloc(8)
+    
+    // Construct value at specific address
+    placement_new(ptr, 42)
+    
+    // Read the value
+    value = *ptr
+    println(value)  // 42
+    
+    free(ptr)
+```
+
+### GC Pinning
+
+```flex
+unsafe:
+    // Create a GC-managed object
+    data = [1, 2, 3, 4, 5]
+    
+    // Pin the object to prevent GC from collecting or moving it
+    gc_pin(data)
+    
+    // Safe to pass pointer to external code
+    // The object won't be collected while pinned
+    
+    // Unpin when done
+    gc_unpin(data)
+```
+
+### GC Root Registration
+
+```flex
+unsafe:
+    // Register an external pointer as a GC root
+    // Useful when storing GC pointers in non-GC memory
+    external_ptr = alloc(8)
+    gc_add_root(external_ptr)
+    
+    // The GC will now scan this location for pointers
+    
+    // Unregister when done
+    gc_remove_root(external_ptr)
+    free(external_ptr)
+```
+
+### Custom Allocators
+
+Flex supports custom memory allocators for specialized use cases like arena allocation, pool allocation, or integration with external memory managers.
+
+```flex
+// Define custom allocator functions
+fn my_alloc size, alignment:
+    // Custom allocation logic
+    return alloc(size)  // Simplified example
+
+fn my_free ptr, size:
+    // Custom deallocation logic
+    free(ptr)
+
+unsafe:
+    // Set custom allocator (requires unsafe)
+    set_allocator(&my_alloc, &my_free)
+    
+    // All subsequent allocations use custom allocator
+    data = alloc(1024)
+    
+    // Reset to default system allocator
+    reset_allocator()
+
+// Query allocator statistics
+total = allocator_stats()    // Total bytes allocated
+peak = allocator_peak()      // Peak memory usage
+```
+
 ---
 
 ## Async/Await
@@ -1026,15 +1115,18 @@ async fn parallel_map items, fn:
 
 ---
 
-## External Functions
+## External Functions (C/FFI Interop)
 
-### FFI with C Libraries
+Flex supports calling external C functions through the `extern` keyword. This enables interoperability with system libraries, DLLs, and C code.
+
+### Basic DLL Imports
 
 ```flex
-extern "C" from "kernel32.dll":
+// Import functions from Windows DLLs
+extern "kernel32.dll":
+    fn GetStdHandle(nStdHandle: int) -> int
+    fn Sleep(dwMilliseconds: int)
     fn GetTickCount64() -> int
-    fn Sleep(ms: int)
-    fn GetComputerNameA(buffer: *u8, size: *int) -> bool
 
 // Usage
 start = GetTickCount64()
@@ -1043,30 +1135,64 @@ elapsed = GetTickCount64() - start
 println("Elapsed: {elapsed}ms")
 ```
 
+### Pointer Types
+
+Flex supports C-style pointer syntax for FFI:
+
+```flex
+// Pointer type declarations
+let p: *int = 0           // Pointer to int
+let s: *str = 0           // Pointer to string  
+let v: *void = 0          // Void pointer
+
+// In function signatures
+extern "kernel32.dll":
+    fn WriteConsoleA(hConsole: int, lpBuffer: *str, nChars: int, lpWritten: *int, lpReserved: *void) -> int
+```
+
+### C ABI Forward Declarations
+
+For functions that will be linked later (static linking):
+
+```flex
+// Forward declarations without library
+extern "C":
+    fn my_c_function(x: int, y: int) -> int
+    fn process_data(data: *int, len: int) -> *int
+```
+
 ### Calling Conventions
 
 ```flex
 // Windows x64 calling convention (default)
-extern "C" from "user32.dll":
-    fn MessageBoxA(hwnd: int, text: *u8, caption: *u8, type: int) -> int
-
-// Stdcall convention
-extern "stdcall" from "kernel32.dll":
+extern "kernel32.dll":
     fn ExitProcess(code: int)
+
+// Explicit ABI specifier
+extern "cdecl" "msvcrt.dll":
+    fn printf(fmt: *str, ...) -> int
+
+// Supported ABIs: "C", "cdecl", "stdcall", "fastcall", "win64"
 ```
 
-### Library Loading
+### Variadic Functions
 
 ```flex
-// System libraries
-extern "C" from "msvcrt.dll":
-    fn printf(fmt: *u8, ...) -> int
-    fn malloc(size: int) -> *u8
-    fn free(ptr: *u8)
+extern "C":
+    fn printf(fmt: *str, ...) -> int
+```
 
-// Custom DLLs
-extern "C" from "mylib.dll":
-    fn custom_function(x: int) -> int
+### Parameter Styles
+
+Both parenthesized and space-separated parameter styles are supported:
+
+```flex
+extern "kernel32.dll":
+    // Parenthesized style (C-like)
+    fn Sleep(dwMilliseconds: int)
+    
+    // Space-separated style (Flex-like)  
+    fn GetStdHandle nStdHandle: int -> int
 ```
 
 ---
@@ -1080,12 +1206,20 @@ extern "C" from "mylib.dll":
 | `print(...)` | Print without newline | `print("Hello")` |
 | `println(...)` | Print with newline | `println("Hello")` |
 
+### Type Conversion Functions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `str(x)` | Convert to string | `str(42)` → `"42"` |
+| `int(x)` | Convert to integer | `int("42")` → `42`, `int(3.7)` → `3` |
+| `float(x)` | Convert to float | `float(42)` → `42.0`, `float("3.14")` → `3.14` |
+| `bool(x)` | Convert to boolean | `bool(0)` → `false`, `bool(1)` → `true` |
+
 ### String Functions
 
 | Function | Description | Example |
 |----------|-------------|---------|
 | `len(s)` | String length | `len("hello")` → `5` |
-| `str(x)` | Convert to string | `str(42)` → `"42"` |
 | `upper(s)` | Uppercase | `upper("hi")` → `"HI"` |
 | `contains(s, sub)` | Check substring | `contains("hello", "ell")` → `true` |
 
@@ -1122,6 +1256,37 @@ extern "C" from "mylib.dll":
 | `hour()` | Current hour (0-23) | `14` |
 | `minute()` | Current minute (0-59) | `30` |
 | `second()` | Current second (0-59) | `45` |
+
+### File I/O Functions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `open(file, mode?)` | Open file, returns handle | `open("data.txt", "r")` |
+| `read(handle, size)` | Read bytes from file | `read(h, 1024)` |
+| `write(handle, data)` | Write string to file | `write(h, "hello")` |
+| `close(handle)` | Close file handle | `close(h)` |
+| `file_size(handle)` | Get file size in bytes | `file_size(h)` |
+
+File modes:
+- `"r"` - Read (default, file must exist)
+- `"w"` - Write (creates/truncates file)
+- `"a"` - Append (creates if needed)
+- `"rw"` - Read/Write (creates if needed)
+
+Example:
+```flex
+// Write to file
+h = open("output.txt", "w")
+write(h, "Hello, World!\n")
+close(h)
+
+// Read from file
+h = open("output.txt", "r")
+size = file_size(h)
+content = read(h, size)
+println(content)
+close(h)
+```
 
 ---
 
@@ -1479,25 +1644,33 @@ flex
 | Built-in Functions | ✅ Complete | print, len, time, etc. |
 | Result Types | ✅ Complete | Ok, Err, is_ok, is_err, unwrap, unwrap_or |
 | Pattern Match Guards | ✅ Complete | `x if condition -> body` syntax |
+| Error Propagation (`?`) | ✅ Complete | Auto-returns Err, unwraps Ok |
+| Maps | ✅ Complete | `{"key": value}` syntax, hash table implementation |
+| Spawn/Await | ✅ Complete | Thread creation, parameterless functions fixed |
+| File I/O | ✅ Complete | open, read, write, close, file_size builtins |
 
 ### Partial / Syntax Only ⚠️
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Async/Await | ✅ Working | spawn creates threads, await waits and gets result |
-| Traits | ✅ Working | Syntax + type checking + vtable generation |
-| Generics | ⚠️ Partial | Type erasure approach, no full monomorphization |
-| Macros | ✅ Working | Full expression/statement cloning in expander |
-| Syntax Macros | ⚠️ Partial | Parsing works, transform incomplete |
+| Traits | ✅ Complete | Syntax + type checking + vtable generation + super traits |
+| Generics | ✅ Complete | Full monomorphization with specialized code generation |
+| Monomorphization | ✅ Complete | Full code specialization for each type instantiation |
+| Macros | ✅ Working | Expression, statement, DSL/syntax macros all work |
+| Syntax Macros | ✅ Working | `syntax name => transform(content)` fully functional |
+| Layers | ✅ Working | `layer name: ... use layer "name"` for conditional code |
+| Infix Macros | ✅ Working | `macro infix "**" 60 a b: a * b` custom operators |
 | Pattern Matching | ✅ Working | Literal, wildcard, variable binding, and guards |
 | push/pop/len | ✅ Working | Runtime list operations with dynamic sizing |
 | Try/Else | ✅ Working | Nil-coalescing pattern for error handling |
-| Error Propagation (`?`) | ❌ Not Yet | Use unwrap_or() as alternative |
+| Circular Import Detection | ✅ Working | Detects cycles with full path reporting |
+| Warning System | ✅ Working | Unused variables and parameters |
 
 ### Not Implemented ❌
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| Custom allocators | ✅ | Use alternative allocators via set_allocator() |
 | Garbage Collection | ❌ | Manual memory only |
 | Debug Information | ❌ | No DWARF/PDB |
 | Cross-Platform | ❌ | Windows x64 only |
@@ -1526,11 +1699,14 @@ flex
 - [x] List operations
 - [x] Result types (Ok, Err, is_ok, is_err, unwrap, unwrap_or)
 - [x] Pattern matching with guards
-- [ ] Error propagation (`?` operator)
+- [x] Error propagation (`?` operator)
+- [x] Maps in native codegen
+- [x] Fix spawn parameterless function edge case
+- [x] File I/O (open, read, write, close, file_size)
+- [x] Circular import detection
+- [x] Warning system (unused variables and parameters)
+- [x] Pattern destructuring (`let (a, b) = tuple`)
 - [ ] Fix module type checking
-- [ ] Fix spawn parameterless function edge case
-- [ ] Pattern destructuring (`let (a, b) = tuple`)
-- [ ] Maps in native codegen
 - [ ] Complete macro execution
 
 ### Phase 2: Multi-Platform Support

@@ -1,0 +1,297 @@
+// Flex Compiler - Native Code Generator Control Flow Statements
+// Handles: IfStmt, WhileStmt, ForStmt, MatchStmt
+
+#include "backend/codegen/codegen_base.h"
+
+namespace flex {
+
+void NativeCodeGen::visit(IfStmt& node) {
+    std::string elseLabel = newLabel("if_else");
+    std::string endLabel = newLabel("if_end");
+    
+    node.condition->accept(*this);
+    asm_.test_rax_rax();
+    asm_.jz_rel32(elseLabel);
+    node.thenBranch->accept(*this);
+    
+    bool thenTerminates = endsWithTerminator(node.thenBranch.get());
+    if (!thenTerminates) {
+        asm_.jmp_rel32(endLabel);
+    }
+    asm_.label(elseLabel);
+    
+    for (auto& [cond, body] : node.elifBranches) {
+        std::string nextLabel = newLabel("elif");
+        cond->accept(*this);
+        asm_.test_rax_rax();
+        asm_.jz_rel32(nextLabel);
+        body->accept(*this);
+        
+        if (!endsWithTerminator(body.get())) {
+            asm_.jmp_rel32(endLabel);
+        }
+        asm_.label(nextLabel);
+    }
+    
+    if (node.elseBranch) {
+        node.elseBranch->accept(*this);
+    }
+    asm_.label(endLabel);
+}
+
+void NativeCodeGen::visit(WhileStmt& node) {
+    std::string loopLabel = newLabel("while_loop");
+    std::string endLabel = newLabel("while_end");
+    
+    loopStack.push_back({loopLabel, endLabel});
+    
+    constVars.clear();
+    
+    asm_.label(loopLabel);
+    node.condition->accept(*this);
+    asm_.test_rax_rax();
+    asm_.jz_rel32(endLabel);
+    node.body->accept(*this);
+    
+    if (!endsWithTerminator(node.body.get())) {
+        asm_.jmp_rel32(loopLabel);
+    }
+    asm_.label(endLabel);
+    
+    loopStack.pop_back();
+}
+
+void NativeCodeGen::visit(ForStmt& node) {
+    std::string loopLabel = newLabel("for_loop");
+    std::string continueLabel = newLabel("for_continue");
+    std::string endLabel = newLabel("for_end");
+    
+    loopStack.push_back({continueLabel, endLabel});
+    
+    varRegisters_.erase(node.var);
+    
+    // Handle range expression: for i in 1..10 (INCLUSIVE)
+    if (auto* range = dynamic_cast<RangeExpr*>(node.iterable.get())) {
+        range->start->accept(*this);
+        allocLocal(node.var);
+        asm_.mov_mem_rbp_rax(locals[node.var]);
+        
+        range->end->accept(*this);
+        allocLocal("$end");
+        asm_.mov_mem_rbp_rax(locals["$end"]);
+        
+        constVars.erase(node.var);
+        
+        asm_.label(loopLabel);
+        asm_.mov_rax_mem_rbp(locals[node.var]);
+        asm_.cmp_rax_mem_rbp(locals["$end"]);
+        asm_.jg_rel32(endLabel);
+        
+        node.body->accept(*this);
+        
+        asm_.label(continueLabel);
+        asm_.mov_rax_mem_rbp(locals[node.var]);
+        asm_.inc_rax();
+        asm_.mov_mem_rbp_rax(locals[node.var]);
+        asm_.jmp_rel32(loopLabel);
+        
+        asm_.label(endLabel);
+        loopStack.pop_back();
+        return;
+    }
+    
+    // Handle range() function call (EXCLUSIVE like Python)
+    if (auto* call = dynamic_cast<CallExpr*>(node.iterable.get())) {
+        if (auto* calleeId = dynamic_cast<Identifier*>(call->callee.get())) {
+            if (calleeId->name == "range" && call->args.size() >= 1) {
+                if (call->args.size() == 1) {
+                    asm_.xor_rax_rax();
+                    allocLocal(node.var);
+                    asm_.mov_mem_rbp_rax(locals[node.var]);
+                    
+                    call->args[0]->accept(*this);
+                    allocLocal("$end");
+                    asm_.mov_mem_rbp_rax(locals["$end"]);
+                } else {
+                    call->args[0]->accept(*this);
+                    allocLocal(node.var);
+                    asm_.mov_mem_rbp_rax(locals[node.var]);
+                    
+                    call->args[1]->accept(*this);
+                    allocLocal("$end");
+                    asm_.mov_mem_rbp_rax(locals["$end"]);
+                }
+                
+                constVars.erase(node.var);
+                
+                asm_.label(loopLabel);
+                asm_.mov_rax_mem_rbp(locals[node.var]);
+                asm_.cmp_rax_mem_rbp(locals["$end"]);
+                asm_.jge_rel32(endLabel);
+                
+                node.body->accept(*this);
+                
+                asm_.label(continueLabel);
+                asm_.mov_rax_mem_rbp(locals[node.var]);
+                asm_.inc_rax();
+                asm_.mov_mem_rbp_rax(locals[node.var]);
+                asm_.jmp_rel32(loopLabel);
+                
+                asm_.label(endLabel);
+                loopStack.pop_back();
+                return;
+            }
+        }
+    }
+    
+    // Handle iteration over list variable
+    if (auto* ident = dynamic_cast<Identifier*>(node.iterable.get())) {
+        auto sizeIt = listSizes.find(ident->name);
+        
+        if (sizeIt != listSizes.end() && sizeIt->second > 0) {
+            size_t listSize = sizeIt->second;
+            
+            node.iterable->accept(*this);
+            allocLocal("$for_list_ptr");
+            asm_.mov_mem_rbp_rax(locals["$for_list_ptr"]);
+            
+            allocLocal("$for_idx");
+            asm_.xor_rax_rax();
+            asm_.mov_mem_rbp_rax(locals["$for_idx"]);
+            
+            allocLocal("$for_list_size");
+            asm_.mov_rax_imm64((int64_t)listSize);
+            asm_.mov_mem_rbp_rax(locals["$for_list_size"]);
+            
+            allocLocal(node.var);
+            constVars.erase(node.var);
+            
+            asm_.label(loopLabel);
+            
+            asm_.mov_rax_mem_rbp(locals["$for_idx"]);
+            asm_.cmp_rax_mem_rbp(locals["$for_list_size"]);
+            asm_.jge_rel32(endLabel);
+            
+            asm_.mov_rcx_mem_rbp(locals["$for_list_ptr"]);
+            asm_.mov_rax_mem_rbp(locals["$for_idx"]);
+            asm_.code.push_back(0x48); asm_.code.push_back(0xC1);
+            asm_.code.push_back(0xE0); asm_.code.push_back(0x03);
+            asm_.add_rax_rcx();
+            asm_.mov_rax_mem_rax();
+            asm_.mov_mem_rbp_rax(locals[node.var]);
+            
+            node.body->accept(*this);
+            
+            asm_.label(continueLabel);
+            asm_.mov_rax_mem_rbp(locals["$for_idx"]);
+            asm_.inc_rax();
+            asm_.mov_mem_rbp_rax(locals["$for_idx"]);
+            asm_.jmp_rel32(loopLabel);
+            
+            asm_.label(endLabel);
+            loopStack.pop_back();
+            return;
+        }
+    }
+    
+    // Fallback: iterate over list with runtime size
+    node.iterable->accept(*this);
+    allocLocal("$for_list_ptr");
+    asm_.mov_mem_rbp_rax(locals["$for_list_ptr"]);
+    
+    allocLocal("$for_idx");
+    asm_.xor_rax_rax();
+    asm_.mov_mem_rbp_rax(locals["$for_idx"]);
+    
+    allocLocal("$for_list_size");
+    asm_.mov_rax_mem_rbp(locals["$for_list_ptr"]);
+    asm_.mov_rax_mem_rax();
+    asm_.mov_mem_rbp_rax(locals["$for_list_size"]);
+    
+    allocLocal(node.var);
+    constVars.erase(node.var);
+    
+    asm_.label(loopLabel);
+    
+    asm_.mov_rax_mem_rbp(locals["$for_idx"]);
+    asm_.cmp_rax_mem_rbp(locals["$for_list_size"]);
+    asm_.jge_rel32(endLabel);
+    
+    asm_.mov_rcx_mem_rbp(locals["$for_list_ptr"]);
+    asm_.add_rcx_imm32(8);
+    asm_.mov_rax_mem_rbp(locals["$for_idx"]);
+    asm_.code.push_back(0x48); asm_.code.push_back(0xC1);
+    asm_.code.push_back(0xE0); asm_.code.push_back(0x03);
+    asm_.add_rax_rcx();
+    asm_.mov_rax_mem_rax();
+    asm_.mov_mem_rbp_rax(locals[node.var]);
+    
+    node.body->accept(*this);
+    
+    asm_.label(continueLabel);
+    asm_.mov_rax_mem_rbp(locals["$for_idx"]);
+    asm_.inc_rax();
+    asm_.mov_mem_rbp_rax(locals["$for_idx"]);
+    asm_.jmp_rel32(loopLabel);
+    
+    asm_.label(endLabel);
+    loopStack.pop_back();
+}
+
+void NativeCodeGen::visit(MatchStmt& node) {
+    node.value->accept(*this);
+    allocLocal("$match_val");
+    asm_.mov_mem_rbp_rax(locals["$match_val"]);
+    
+    std::string endLabel = newLabel("match_end");
+    
+    for (size_t i = 0; i < node.cases.size(); i++) {
+        auto& matchCase = node.cases[i];
+        std::string nextCase = newLabel("match_case");
+        
+        // Check pattern
+        if (auto* intLit = dynamic_cast<IntegerLiteral*>(matchCase.pattern.get())) {
+            asm_.mov_rax_mem_rbp(locals["$match_val"]);
+            asm_.cmp_rax_imm32((int32_t)intLit->value);
+            asm_.jnz_rel32(nextCase);
+        } else if (auto* boolLit = dynamic_cast<BoolLiteral*>(matchCase.pattern.get())) {
+            asm_.mov_rax_mem_rbp(locals["$match_val"]);
+            asm_.cmp_rax_imm32(boolLit->value ? 1 : 0);
+            asm_.jnz_rel32(nextCase);
+        } else if (auto* ident = dynamic_cast<Identifier*>(matchCase.pattern.get())) {
+            if (ident->name == "_") {
+                // Wildcard - always matches
+            } else {
+                // Bind variable
+                asm_.mov_rax_mem_rbp(locals["$match_val"]);
+                allocLocal(ident->name);
+                asm_.mov_mem_rbp_rax(locals[ident->name]);
+            }
+        }
+        
+        // Check guard if present
+        if (matchCase.guard) {
+            matchCase.guard->accept(*this);
+            asm_.test_rax_rax();
+            asm_.jz_rel32(nextCase);
+        }
+        
+        // Execute body
+        matchCase.body->accept(*this);
+        
+        if (!endsWithTerminator(matchCase.body.get())) {
+            asm_.jmp_rel32(endLabel);
+        }
+        
+        asm_.label(nextCase);
+    }
+    
+    // Handle default case
+    if (node.defaultCase) {
+        node.defaultCase->accept(*this);
+    }
+    
+    asm_.label(endLabel);
+}
+
+} // namespace flex

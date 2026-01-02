@@ -165,6 +165,19 @@ extern "C" {
     
     // Write barrier (for generational GC - future)
     void flex_gc_write_barrier(void* obj, void* field, void* newValue);
+    
+    // Custom allocator support
+    // Set custom allocator functions for GC to use
+    // alloc: function to allocate memory (size, alignment) -> ptr
+    // free: function to free memory (ptr, size)
+    // userData: optional user data passed to allocator
+    void flex_gc_set_allocator(void* (*alloc)(size_t, size_t), void (*free)(void*, size_t), void* userData);
+    
+    // Reset to default system allocator
+    void flex_gc_reset_allocator();
+    
+    // Get the user data passed to set_allocator
+    void* flex_gc_get_allocator_userdata();
 }
 
 } // namespace flex

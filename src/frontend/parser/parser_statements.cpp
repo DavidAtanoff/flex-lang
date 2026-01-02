@@ -24,7 +24,10 @@ StmtPtr Parser::expressionStatement() {
     auto expr = expression();
     
     if (auto* id = dynamic_cast<Identifier*>(expr.get())) {
-        static const std::unordered_set<std::string> builtins = {"print", "println", "input", "exit"};
+        static const std::unordered_set<std::string> builtins = {
+            "print", "println", "input", "exit",
+            "gc_threshold", "gc_collect", "gc_enable", "gc_disable"
+        };
         
         // Compile-time constant: NAME :: value
         if (match(TokenType::DOUBLE_COLON)) {

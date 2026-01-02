@@ -43,6 +43,9 @@ set(SEMANTIC_SOURCES
     src/semantic/symbols/symbol_table.cpp
     # Module system
     src/semantic/module/module_system.cpp
+    # Generics / Monomorphization
+    src/semantic/generics/monomorphizer.cpp
+    src/semantic/generics/ast_cloner.cpp
     # Modular type checker
     src/semantic/checker/checker_core.cpp
     src/semantic/checker/checker_expr.cpp
@@ -94,14 +97,31 @@ set(BACKEND_SOURCES
     src/backend/object/object_file.cpp
     # Garbage collection
     src/backend/gc/gc.cpp
-    # Modular native codegen
-    src/backend/codegen/codegen_core.cpp
+    src/backend/gc/allocator.cpp
+    # Modular native codegen - Core
+    src/backend/codegen/core/codegen_compile.cpp
+    src/backend/codegen/core/codegen_helpers.cpp
+    src/backend/codegen/core/codegen_print.cpp
+    # Modular native codegen - Expressions
+    src/backend/codegen/expr/codegen_expr_literals.cpp
+    src/backend/codegen/expr/codegen_expr_binary.cpp
+    src/backend/codegen/expr/codegen_expr_collections.cpp
+    src/backend/codegen/expr/codegen_expr_misc.cpp
+    # Modular native codegen - Calls
+    src/backend/codegen/call/codegen_call_core.cpp
+    # Modular native codegen - Statements
+    src/backend/codegen/stmt/codegen_stmt_control.cpp
+    src/backend/codegen/stmt/codegen_stmt_vars.cpp
+    src/backend/codegen/stmt/codegen_stmt_misc.cpp
+    # Modular native codegen - Declarations
+    src/backend/codegen/decl/codegen_decl_fn.cpp
+    src/backend/codegen/decl/codegen_decl_types.cpp
+    src/backend/codegen/decl/codegen_decl_program.cpp
+    # Modular native codegen - Support
     src/backend/codegen/codegen_builtins.cpp
-    src/backend/codegen/codegen_expr.cpp
-    src/backend/codegen/codegen_stmt.cpp
-    src/backend/codegen/codegen_decl.cpp
-    src/backend/codegen/codegen_call.cpp
     src/backend/codegen/codegen_gc.cpp
+    src/backend/codegen/codegen_traits.cpp
+    src/backend/codegen/codegen_ffi.cpp
     src/backend/codegen/register_allocator.cpp
     src/backend/codegen/global_register_allocator.cpp
     src/backend/codegen/vectorizer.cpp
@@ -149,6 +169,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/semantic/expander
     ${CMAKE_SOURCE_DIR}/src/semantic/module
     ${CMAKE_SOURCE_DIR}/src/semantic/optimizer
+    ${CMAKE_SOURCE_DIR}/src/semantic/generics
     # Backend
     ${CMAKE_SOURCE_DIR}/src/backend
     ${CMAKE_SOURCE_DIR}/src/backend/x64
@@ -156,6 +177,11 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/backend/runtime
     ${CMAKE_SOURCE_DIR}/src/backend/gc
     ${CMAKE_SOURCE_DIR}/src/backend/codegen
+    ${CMAKE_SOURCE_DIR}/src/backend/codegen/core
+    ${CMAKE_SOURCE_DIR}/src/backend/codegen/expr
+    ${CMAKE_SOURCE_DIR}/src/backend/codegen/call
+    ${CMAKE_SOURCE_DIR}/src/backend/codegen/stmt
+    ${CMAKE_SOURCE_DIR}/src/backend/codegen/decl
     ${CMAKE_SOURCE_DIR}/src/backend/bytecode
     ${CMAKE_SOURCE_DIR}/src/backend/vm
     ${CMAKE_SOURCE_DIR}/src/backend/linker

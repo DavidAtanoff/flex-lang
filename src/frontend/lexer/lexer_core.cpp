@@ -10,6 +10,7 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"elif", TokenType::ELIF}, {"for", TokenType::FOR}, {"while", TokenType::WHILE},
     {"match", TokenType::MATCH}, {"return", TokenType::RETURN},
     {"true", TokenType::TRUE}, {"false", TokenType::FALSE}, {"nil", TokenType::NIL},
+    {"null", TokenType::NIL},  // Alias for nil (C-style null pointer)
     {"and", TokenType::AND}, {"or", TokenType::OR}, {"not", TokenType::NOT},
     {"in", TokenType::IN}, {"to", TokenType::TO}, {"by", TokenType::BY},
     {"try", TokenType::TRY}, {"use", TokenType::USE}, {"layer", TokenType::LAYER},

@@ -420,6 +420,20 @@ ExprPtr LoopUnrollingPass::cloneExpression(Expression* expr, const std::string& 
         return newRecord;
     }
     
+    if (auto* map = dynamic_cast<MapExpr*>(expr)) {
+        auto newMap = std::make_unique<MapExpr>(loc);
+        for (auto& entry : map->entries) {
+            auto clonedKey = cloneExpression(entry.first.get(), inductionVar, offset);
+            auto clonedVal = cloneExpression(entry.second.get(), inductionVar, offset);
+            if (clonedKey && clonedVal) {
+                newMap->entries.push_back({std::move(clonedKey), std::move(clonedVal)});
+            } else {
+                return nullptr;
+            }
+        }
+        return newMap;
+    }
+    
     if (auto* nilLit = dynamic_cast<NilLiteral*>(expr)) {
         return std::make_unique<NilLiteral>(loc);
     }
@@ -429,6 +443,12 @@ ExprPtr LoopUnrollingPass::cloneExpression(Expression* expr, const std::string& 
             cloneExpression(assignExpr->target.get(), inductionVar, offset),
             assignExpr->op,
             cloneExpression(assignExpr->value.get(), inductionVar, offset),
+            loc);
+    }
+    
+    if (auto* propagate = dynamic_cast<PropagateExpr*>(expr)) {
+        return std::make_unique<PropagateExpr>(
+            cloneExpression(propagate->operand.get(), inductionVar, offset),
             loc);
     }
     

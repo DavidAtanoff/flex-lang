@@ -17,6 +17,7 @@ void MemberExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void IndexExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void ListExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void RecordExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MapExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void RangeExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void LambdaExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void TernaryExpr::accept(ASTVisitor& v) { v.visit(*this); }
@@ -29,6 +30,7 @@ void AwaitExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void SpawnExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void DSLBlock::accept(ASTVisitor& v) { v.visit(*this); }
 void AssignExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void PropagateExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void ExprStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void VarDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void DestructuringDecl::accept(ASTVisitor& v) { v.visit(*this); }

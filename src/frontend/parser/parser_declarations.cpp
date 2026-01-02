@@ -261,7 +261,32 @@ StmtPtr Parser::traitDeclaration() {
         consume(TokenType::RBRACKET, "Expected ']' after type parameters");
     }
     
-    consume(TokenType::COLON, "Expected ':' after trait name");
+    // Parse super traits: trait Foo: Bar, Baz
+    // Note: We check for COLON but need to distinguish from block start
+    // Super traits come before the block colon
+    if (check(TokenType::COLON)) {
+        // Peek ahead to see if this is super traits or block start
+        // If next token after COLON is IDENTIFIER (not NEWLINE/INDENT), it's super traits
+        size_t savedPos = current;
+        advance();  // consume COLON
+        
+        if (check(TokenType::IDENTIFIER)) {
+            // This is super traits
+            do {
+                trait->superTraits.push_back(consume(TokenType::IDENTIFIER, "Expected super trait name").lexeme);
+            } while (match(TokenType::COMMA));
+            
+            // Now expect the block colon
+            consume(TokenType::COLON, "Expected ':' after super traits");
+        } else {
+            // This was the block colon, restore position
+            current = savedPos;
+            consume(TokenType::COLON, "Expected ':' after trait name");
+        }
+    } else {
+        consume(TokenType::COLON, "Expected ':' after trait name");
+    }
+    
     match(TokenType::NEWLINE);
     
     consume(TokenType::INDENT, "Expected indented trait body");
@@ -454,12 +479,25 @@ StmtPtr Parser::externDeclaration() {
     std::string abi = "C";
     std::string library;
     
+    // Parse ABI and/or library specification
+    // extern "C":                    - C ABI, no specific library (link later)
+    // extern "kernel32.dll":         - Windows DLL import
+    // extern "C" "mylib.lib":        - C ABI with static library
+    // extern "cdecl" "msvcrt.dll":   - Explicit calling convention
     if (check(TokenType::STRING)) {
-        abi = std::get<std::string>(advance().literal);
-    }
-    
-    if (check(TokenType::STRING)) {
-        library = std::get<std::string>(advance().literal);
+        std::string first = std::get<std::string>(advance().literal);
+        
+        // Check if this is an ABI specifier or a library
+        if (first == "C" || first == "cdecl" || first == "stdcall" || first == "fastcall" || first == "win64") {
+            abi = first;
+            // Check for optional library
+            if (check(TokenType::STRING)) {
+                library = std::get<std::string>(advance().literal);
+            }
+        } else {
+            // It's a library name, ABI defaults to "C"
+            library = first;
+        }
     }
     
     consume(TokenType::COLON, "Expected ':' after extern");
@@ -471,7 +509,7 @@ StmtPtr Parser::externDeclaration() {
     
     while (!check(TokenType::DEDENT) && !isAtEnd()) {
         if (match(TokenType::FN)) {
-            auto fn = fnDeclaration();
+            auto fn = externFnDeclaration();
             ext->functions.push_back(std::unique_ptr<FnDecl>(static_cast<FnDecl*>(fn.release())));
         }
         skipNewlines();
@@ -479,6 +517,64 @@ StmtPtr Parser::externDeclaration() {
     
     consume(TokenType::DEDENT, "Expected end of extern block");
     return ext;
+}
+
+StmtPtr Parser::externFnDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected function name").lexeme;
+    
+    auto fn = std::make_unique<FnDecl>(name, loc);
+    fn->isExtern = true;
+    
+    // Parse parameters - support both styles:
+    // New style with parens: fn printf(fmt: *str, ...) -> int
+    // Old style without parens: fn GetStdHandle nStdHandle -> int
+    if (match(TokenType::LPAREN)) {
+        // New style with parentheses
+        while (!check(TokenType::RPAREN) && !isAtEnd()) {
+            // Check for variadic (...)
+            if (match(TokenType::DOTDOT)) {
+                if (match(TokenType::DOT)) {
+                    // ... variadic marker
+                    fn->params.emplace_back("...", "...");
+                }
+                break;
+            }
+            
+            std::string paramName;
+            std::string paramType;
+            
+            if (check(TokenType::IDENTIFIER)) {
+                paramName = advance().lexeme;
+                if (match(TokenType::COLON)) {
+                    paramType = parseType();
+                } else {
+                    // Just a type, no name
+                    paramType = paramName;
+                    paramName = "_p" + std::to_string(fn->params.size());
+                }
+            } else if (check(TokenType::STAR)) {
+                // Pointer type without name
+                paramType = parseType();
+                paramName = "_p" + std::to_string(fn->params.size());
+            }
+            
+            fn->params.emplace_back(paramName, paramType);
+            
+            if (!match(TokenType::COMMA)) break;
+        }
+        consume(TokenType::RPAREN, "Expected ')' after parameters");
+    } else {
+        // Old style: space-separated params without parens
+        fn->params = parseParams();
+    }
+    
+    if (match(TokenType::ARROW)) {
+        fn->returnType = parseType();
+    }
+    
+    match(TokenType::NEWLINE);
+    return fn;
 }
 
 StmtPtr Parser::macroDeclaration() {

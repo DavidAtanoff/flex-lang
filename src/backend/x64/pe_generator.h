@@ -22,6 +22,12 @@ struct CodeFixup {
     FixupType type;     // What section this references
 };
 
+// Vtable fixup - stores function address in data section
+struct VtableFixup {
+    uint32_t dataOffset;    // Offset in data section where the address goes
+    std::string label;      // Function label to resolve
+};
+
 class PEGenerator {
 public:
     void addCode(const std::vector<uint8_t>& code);
@@ -34,6 +40,10 @@ public:
     void finalizeImports();
     uint32_t getImportRVA(const std::string& function);
     bool write(const std::string& filename);
+    
+    // Vtable support
+    void addVtableFixup(uint32_t dataRVA, const std::string& label);
+    void setLabelOffsets(const std::map<std::string, size_t>& labels);
     
     // Get the actual RVAs after code generation (for fixup resolution)
     uint32_t getActualDataRVA() const;
@@ -53,8 +63,10 @@ private:
     std::vector<uint8_t> dataSection;
     std::vector<uint8_t> idataSection;
     std::vector<CodeFixup> codeFixups;  // Tracked fixups for precise relocation
+    std::vector<VtableFixup> vtableFixups;  // Vtable function pointer fixups
     std::map<std::string, std::vector<std::string>> imports;
     std::map<std::string, uint32_t> importRVAs;  // Relative to IDATA_RVA_PLACEHOLDER
+    std::map<std::string, size_t> labelOffsets_;  // Function label -> code offset
     bool importsFinalized = false;
     
     uint32_t actualDataRVA_ = 0;
@@ -63,6 +75,7 @@ private:
     void buildImportSection();
     void calculateActualRVAs();
     void applyFixups();
+    void applyVtableFixups();
 };
 
 } // namespace flex

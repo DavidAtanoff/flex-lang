@@ -27,6 +27,7 @@ public:
     void visit(IndexExpr& n) override;
     void visit(ListExpr& n) override;
     void visit(RecordExpr& n) override;
+    void visit(MapExpr& n) override;
     void visit(RangeExpr& n) override;
     void visit(LambdaExpr& n) override;
     void visit(TernaryExpr& n) override;
@@ -39,6 +40,7 @@ public:
     void visit(SpawnExpr& n) override;
     void visit(DSLBlock& n) override;
     void visit(AssignExpr& n) override;
+    void visit(PropagateExpr& n) override;
     void visit(ExprStmt& n) override;
     void visit(VarDecl& n) override;
     void visit(DestructuringDecl& n) override;
