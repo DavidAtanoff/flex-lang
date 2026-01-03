@@ -228,6 +228,20 @@ void ASTPrinter::visit(RecordDecl& n) {
     indent++; for (auto& [name, type] : n.fields) print(name + ": " + type); indent--;
 }
 
+void ASTPrinter::visit(UnionDecl& n) {
+    std::string typeParams;
+    if (!n.typeParams.empty()) {
+        typeParams = "[";
+        for (size_t i = 0; i < n.typeParams.size(); i++) {
+            if (i > 0) typeParams += ", ";
+            typeParams += n.typeParams[i];
+        }
+        typeParams += "]";
+    }
+    print("UnionDecl: " + n.name + typeParams);
+    indent++; for (auto& [name, type] : n.fields) print(name + ": " + type); indent--;
+}
+
 void ASTPrinter::visit(EnumDecl& n) {
     print("EnumDecl: " + n.name);
     indent++;
@@ -297,6 +311,7 @@ void ASTPrinter::visit(ModuleDecl& n) {
     indent--; 
 }
 void ASTPrinter::visit(DeleteStmt& n) { print("DeleteStmt"); indent++; n.expr->accept(*this); indent--; }
+void ASTPrinter::visit(AsmStmt& n) { print("AsmStmt: " + n.code.substr(0, 50) + (n.code.size() > 50 ? "..." : "")); }
 void ASTPrinter::visit(Program& n) { print("Program"); indent++; for (auto& s : n.statements) s->accept(*this); indent--; }
 
 void printTokens(const std::vector<Token>& tokens) {
@@ -337,6 +352,109 @@ void ASTPrinter::visit(AssignExpr& n) {
 void ASTPrinter::visit(PropagateExpr& n) {
     print("PropagateExpr (?)");
     indent++; n.operand->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(ChanSendExpr& n) {
+    print("ChanSendExpr (<-)");
+    indent++; 
+    print("Channel:"); indent++; n.channel->accept(*this); indent--;
+    print("Value:"); indent++; n.value->accept(*this); indent--;
+    indent--;
+}
+
+void ASTPrinter::visit(ChanRecvExpr& n) {
+    print("ChanRecvExpr (<-)");
+    indent++; n.channel->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(MakeChanExpr& n) {
+    std::string info = "MakeChanExpr: chan[" + n.elementType;
+    if (n.bufferSize > 0) info += ", " + std::to_string(n.bufferSize);
+    info += "]";
+    print(info);
+}
+
+void ASTPrinter::visit(MakeMutexExpr& n) {
+    print("MakeMutexExpr: Mutex[" + n.elementType + "]");
+}
+
+void ASTPrinter::visit(MakeRWLockExpr& n) {
+    print("MakeRWLockExpr: RWLock[" + n.elementType + "]");
+}
+
+void ASTPrinter::visit(MakeCondExpr& n) {
+    (void)n;
+    print("MakeCondExpr: Cond");
+}
+
+void ASTPrinter::visit(MakeSemaphoreExpr& n) {
+    print("MakeSemaphoreExpr: Semaphore(" + std::to_string(n.initialCount) + ", " + std::to_string(n.maxCount) + ")");
+}
+
+void ASTPrinter::visit(MutexLockExpr& n) {
+    print("MutexLockExpr");
+    indent++; n.mutex->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(MutexUnlockExpr& n) {
+    print("MutexUnlockExpr");
+    indent++; n.mutex->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(RWLockReadExpr& n) {
+    print("RWLockReadExpr");
+    indent++; n.rwlock->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(RWLockWriteExpr& n) {
+    print("RWLockWriteExpr");
+    indent++; n.rwlock->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(RWLockUnlockExpr& n) {
+    print("RWLockUnlockExpr");
+    indent++; n.rwlock->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(CondWaitExpr& n) {
+    print("CondWaitExpr");
+    indent++;
+    print("Cond:"); indent++; n.cond->accept(*this); indent--;
+    print("Mutex:"); indent++; n.mutex->accept(*this); indent--;
+    indent--;
+}
+
+void ASTPrinter::visit(CondSignalExpr& n) {
+    print("CondSignalExpr");
+    indent++; n.cond->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(CondBroadcastExpr& n) {
+    print("CondBroadcastExpr");
+    indent++; n.cond->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(SemAcquireExpr& n) {
+    print("SemAcquireExpr");
+    indent++; n.sem->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(SemReleaseExpr& n) {
+    print("SemReleaseExpr");
+    indent++; n.sem->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(SemTryAcquireExpr& n) {
+    print("SemTryAcquireExpr");
+    indent++; n.sem->accept(*this); indent--;
+}
+
+void ASTPrinter::visit(LockStmt& n) {
+    print("LockStmt");
+    indent++;
+    print("Mutex:"); indent++; n.mutex->accept(*this); indent--;
+    print("Body:"); indent++; n.body->accept(*this); indent--;
+    indent--;
 }
 
 } // namespace flex

@@ -164,13 +164,15 @@ void TypeChecker::visit(UnaryExpr& node) {
 void TypeChecker::visit(CallExpr& node) {
     auto& reg = TypeRegistry::instance();
     
-    // Check for unsafe operations: alloc(), free(), stackalloc(), placement_new(), gc_pin(), gc_unpin(), gc_add_root(), gc_remove_root(), set_allocator() require unsafe block
+    // Check for unsafe operations: alloc(), free(), stackalloc(), placement_new(), gc_pin(), gc_unpin(), gc_add_root(), gc_remove_root(), set_allocator(), memcpy(), memset(), memmove(), memcmp() require unsafe block
     if (auto* id = dynamic_cast<Identifier*>(node.callee.get())) {
         if (id->name == "alloc" || id->name == "free" || 
             id->name == "stackalloc" || id->name == "placement_new" ||
             id->name == "gc_pin" || id->name == "gc_unpin" ||
             id->name == "gc_add_root" || id->name == "gc_remove_root" ||
-            id->name == "set_allocator") {
+            id->name == "set_allocator" ||
+            id->name == "memcpy" || id->name == "memset" ||
+            id->name == "memmove" || id->name == "memcmp") {
             if (!symbols_.inUnsafe()) {
                 error("'" + id->name + "' requires unsafe block", node.location);
             }
@@ -254,16 +256,71 @@ void TypeChecker::visit(CallExpr& node) {
             }
         }
         currentType_ = fnType->returnType ? fnType->returnType : reg.voidType();
+    } else if (calleeType->kind == TypeKind::PTR) {
+        // Handle function pointer calls: *fn(int) -> int
+        auto* ptrType = static_cast<PtrType*>(calleeType.get());
+        if (ptrType->pointee && ptrType->pointee->kind == TypeKind::FUNCTION) {
+            auto* fnType = static_cast<FunctionType*>(ptrType->pointee.get());
+            
+            // Visit all arguments to mark them as used
+            for (size_t i = 0; i < node.args.size(); i++) {
+                TypePtr argType = inferType(node.args[i].get());
+                
+                // Only check against parameters if we have a corresponding parameter
+                if (i < fnType->params.size()) {
+                    TypePtr paramType = fnType->params[i].second;
+                    
+                    if (!isAssignable(paramType, argType)) {
+                        error("Argument type mismatch: expected '" + paramType->toString() + 
+                              "', got '" + argType->toString() + "'", node.args[i]->location);
+                    }
+                }
+            }
+            currentType_ = fnType->returnType ? fnType->returnType : reg.voidType();
+        } else {
+            // Pointer but not to a function - still visit args
+            for (auto& arg : node.args) inferType(arg.get());
+            currentType_ = reg.anyType();
+        }
     } else if (calleeType->kind == TypeKind::ANY) {
         for (auto& arg : node.args) inferType(arg.get());
         currentType_ = reg.anyType();
     } else {
+        // Unknown callee type - still visit args to mark them as used
+        for (auto& arg : node.args) inferType(arg.get());
         currentType_ = reg.errorType();
     }
 }
 
 void TypeChecker::visit(MemberExpr& node) {
     auto& reg = TypeRegistry::instance();
+    
+    // Check if this is an enum member access (e.g., Status.Ok)
+    if (auto* id = dynamic_cast<Identifier*>(node.object.get())) {
+        // Check if the identifier is an enum type
+        TypePtr enumType = symbols_.lookupType(id->name);
+        if (enumType) {
+            // Look up the qualified enum variant name
+            std::string qualifiedName = id->name + "." + node.member;
+            Symbol* variantSym = symbols_.lookup(qualifiedName);
+            if (variantSym) {
+                currentType_ = variantSym->type;
+                return;
+            }
+        }
+        
+        // Also check if it's a module member access
+        Symbol* moduleSym = symbols_.lookup(id->name);
+        if (moduleSym && moduleSym->kind == SymbolKind::MODULE) {
+            std::string qualifiedName = id->name + "." + node.member;
+            Symbol* memberSym = symbols_.lookup(qualifiedName);
+            if (memberSym) {
+                currentType_ = memberSym->type;
+                return;
+            }
+        }
+    }
+    
     TypePtr objType = inferType(node.object.get());
     if (objType->kind == TypeKind::RECORD) {
         auto* recType = static_cast<RecordType*>(objType.get());
@@ -301,6 +358,32 @@ void TypeChecker::visit(ListExpr& node) {
 }
 
 void TypeChecker::visit(RecordExpr& node) {
+    // If the record has a type name (e.g., Point{x: 1, y: 2}), look up the declared type
+    if (!node.typeName.empty()) {
+        TypePtr declaredType = symbols_.lookupType(node.typeName);
+        if (declaredType && declaredType->kind == TypeKind::RECORD) {
+            auto* recType = static_cast<RecordType*>(declaredType.get());
+            // Type check each field against the declared type
+            for (auto& field : node.fields) {
+                TypePtr fieldType = inferType(field.second.get());
+                // Find the field in the declared type and check compatibility
+                for (const auto& declField : recType->fields) {
+                    if (declField.name == field.first) {
+                        if (!isAssignable(declField.type, fieldType)) {
+                            error("Field '" + field.first + "' type mismatch: expected '" + 
+                                  declField.type->toString() + "', got '" + fieldType->toString() + "'",
+                                  node.location);
+                        }
+                        break;
+                    }
+                }
+            }
+            currentType_ = declaredType;
+            return;
+        }
+    }
+    
+    // Anonymous record - create a new record type from the fields
     auto recType = std::make_shared<RecordType>();
     for (auto& field : node.fields) {
         TypePtr fieldType = inferType(field.second.get());
@@ -494,6 +577,152 @@ void TypeChecker::visit(PropagateExpr& node) {
     // For simplicity, assume the unwrapped type is the same as the operand
     // (proper Result type handling would extract the Ok type)
     currentType_ = operandType;
+}
+
+void TypeChecker::visit(ChanSendExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    TypePtr chanType = inferType(node.channel.get());
+    TypePtr valueType = inferType(node.value.get());
+    
+    // Check that channel is actually a channel type
+    if (chanType->kind != TypeKind::CHANNEL) {
+        error("Cannot send to non-channel type '" + chanType->toString() + "'", node.location);
+        currentType_ = reg.voidType();
+        return;
+    }
+    
+    auto* ch = static_cast<ChannelType*>(chanType.get());
+    if (!isAssignable(ch->element, valueType)) {
+        error("Cannot send '" + valueType->toString() + "' to channel of type '" + 
+              ch->element->toString() + "'", node.location);
+    }
+    
+    // Send returns void (or could return bool for non-blocking)
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(ChanRecvExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    TypePtr chanType = inferType(node.channel.get());
+    
+    // Check that channel is actually a channel type
+    if (chanType->kind != TypeKind::CHANNEL) {
+        error("Cannot receive from non-channel type '" + chanType->toString() + "'", node.location);
+        currentType_ = reg.anyType();
+        return;
+    }
+    
+    auto* ch = static_cast<ChannelType*>(chanType.get());
+    // Receive returns the element type
+    currentType_ = ch->element;
+}
+
+void TypeChecker::visit(MakeChanExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    TypePtr elemType = parseTypeAnnotation(node.elementType);
+    if (elemType->kind == TypeKind::UNKNOWN) {
+        elemType = reg.anyType();
+    }
+    currentType_ = reg.channelType(elemType, node.bufferSize);
+}
+
+void TypeChecker::visit(MakeMutexExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    TypePtr elemType = parseTypeAnnotation(node.elementType);
+    if (elemType->kind == TypeKind::UNKNOWN) {
+        elemType = reg.anyType();
+    }
+    currentType_ = reg.mutexType(elemType);
+}
+
+void TypeChecker::visit(MakeRWLockExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    TypePtr elemType = parseTypeAnnotation(node.elementType);
+    if (elemType->kind == TypeKind::UNKNOWN) {
+        elemType = reg.anyType();
+    }
+    currentType_ = reg.rwlockType(elemType);
+}
+
+void TypeChecker::visit(MakeCondExpr& node) {
+    (void)node;
+    auto& reg = TypeRegistry::instance();
+    currentType_ = reg.condType();
+}
+
+void TypeChecker::visit(MakeSemaphoreExpr& node) {
+    (void)node;
+    auto& reg = TypeRegistry::instance();
+    currentType_ = reg.semaphoreType();
+}
+
+void TypeChecker::visit(MutexLockExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.mutex->accept(*this);
+    // Lock returns void
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(MutexUnlockExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.mutex->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(RWLockReadExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.rwlock->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(RWLockWriteExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.rwlock->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(RWLockUnlockExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.rwlock->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(CondWaitExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.cond->accept(*this);
+    node.mutex->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(CondSignalExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.cond->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(CondBroadcastExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.cond->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(SemAcquireExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.sem->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(SemReleaseExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.sem->accept(*this);
+    currentType_ = reg.voidType();
+}
+
+void TypeChecker::visit(SemTryAcquireExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    node.sem->accept(*this);
+    // Returns bool (1 if acquired, 0 if not)
+    currentType_ = reg.boolType();
 }
 
 } // namespace flex

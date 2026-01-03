@@ -47,6 +47,13 @@ void Compiler::visit(RecordDecl& node) {
     emitOp(OpCode::STORE_GLOBAL, nameIdx);
 }
 
+void Compiler::visit(UnionDecl& node) {
+    int idx = addConstant(Value(node.name));
+    emitOp(OpCode::CONST, idx);
+    int nameIdx = addConstant(Value(node.name));
+    emitOp(OpCode::STORE_GLOBAL, nameIdx);
+}
+
 void Compiler::visit(UseStmt& node) { (void)node; }
 void Compiler::visit(ModuleDecl& node) {
     // Compile all declarations in the module

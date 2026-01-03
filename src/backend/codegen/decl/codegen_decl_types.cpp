@@ -5,9 +5,61 @@
 
 namespace flex {
 
-void NativeCodeGen::visit(RecordDecl& node) { (void)node; }
+void NativeCodeGen::visit(RecordDecl& node) {
+    // Store record type information for field access
+    RecordTypeInfo info;
+    info.name = node.name;
+    info.reprC = node.reprC;
+    info.reprPacked = node.reprPacked;
+    info.reprAlign = node.reprAlign;
+    info.isUnion = false;
+    info.hasBitfields = false;
+    
+    for (size_t i = 0; i < node.fields.size(); i++) {
+        const auto& [fieldName, fieldType] = node.fields[i];
+        info.fieldNames.push_back(fieldName);
+        info.fieldTypes.push_back(fieldType);
+        
+        // Handle bitfield specification
+        int bitWidth = 0;
+        if (i < node.bitfields.size() && node.bitfields[i].isBitfield()) {
+            bitWidth = node.bitfields[i].bitWidth;
+            info.hasBitfields = true;
+        }
+        info.fieldBitWidths.push_back(bitWidth);
+        info.fieldBitOffsets.push_back(0);  // Will be computed in computeRecordLayout
+    }
+    
+    recordTypes_[node.name] = info;
+}
+
+void NativeCodeGen::visit(UnionDecl& node) {
+    // Store union type information - unions have all fields at offset 0
+    RecordTypeInfo info;
+    info.name = node.name;
+    info.reprC = node.reprC;
+    info.reprPacked = false;  // Packed doesn't apply to unions
+    info.reprAlign = node.reprAlign;
+    info.isUnion = true;      // Mark as union for offset calculation
+    
+    for (auto& [fieldName, fieldType] : node.fields) {
+        info.fieldNames.push_back(fieldName);
+        info.fieldTypes.push_back(fieldType);
+    }
+    
+    recordTypes_[node.name] = info;
+}
 void NativeCodeGen::visit(UseStmt& node) { (void)node; }
-void NativeCodeGen::visit(EnumDecl& node) { (void)node; }
+void NativeCodeGen::visit(EnumDecl& node) {
+    // Store enum variant values as compile-time constants
+    int64_t nextValue = 0;
+    for (auto& [variantName, explicitValue] : node.variants) {
+        int64_t actualValue = explicitValue.value_or(nextValue);
+        std::string qualifiedName = node.name + "." + variantName;
+        constVars[qualifiedName] = actualValue;
+        nextValue = actualValue + 1;
+    }
+}
 void NativeCodeGen::visit(TypeAlias& node) { (void)node; }
 
 void NativeCodeGen::visit(TraitDecl& node) {

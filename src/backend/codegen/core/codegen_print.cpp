@@ -28,11 +28,13 @@ void NativeCodeGen::emitWriteConsole(uint32_t strRVA, size_t len) {
     asm_.lea_rax_rip_fixup(strRVA);
     asm_.mov_rdx_rax();
     asm_.mov_r8d_imm32((int32_t)len);
+    // lea r9, [rsp+0x28] - address for lpNumberOfCharsWritten
     asm_.code.push_back(0x4C); asm_.code.push_back(0x8D); asm_.code.push_back(0x4C);
-    asm_.code.push_back(0x24); asm_.code.push_back(0x20);
-    asm_.xor_rax_rax();
-    asm_.code.push_back(0x48); asm_.code.push_back(0x89); asm_.code.push_back(0x44);
     asm_.code.push_back(0x24); asm_.code.push_back(0x28);
+    // mov qword [rsp+0x20], 0 - lpReserved = NULL (5th parameter)
+    asm_.code.push_back(0x48); asm_.code.push_back(0xC7); asm_.code.push_back(0x44);
+    asm_.code.push_back(0x24); asm_.code.push_back(0x20);
+    asm_.code.push_back(0x00); asm_.code.push_back(0x00); asm_.code.push_back(0x00); asm_.code.push_back(0x00);
     asm_.call_mem_rip(pe_.getImportRVA("WriteConsoleA"));
     
     if (!stackAllocated_) asm_.add_rsp_imm32(0x38);
@@ -62,11 +64,13 @@ void NativeCodeGen::emitWriteConsoleBuffer() {
         asm_.pop_rdx();
     }
     
+    // lea r9, [rsp+0x28] - address for lpNumberOfCharsWritten
     asm_.code.push_back(0x4C); asm_.code.push_back(0x8D); asm_.code.push_back(0x4C);
-    asm_.code.push_back(0x24); asm_.code.push_back(0x20);
-    asm_.xor_rax_rax();
-    asm_.code.push_back(0x48); asm_.code.push_back(0x89); asm_.code.push_back(0x44);
     asm_.code.push_back(0x24); asm_.code.push_back(0x28);
+    // mov qword [rsp+0x20], 0 - lpReserved = NULL (5th parameter)
+    asm_.code.push_back(0x48); asm_.code.push_back(0xC7); asm_.code.push_back(0x44);
+    asm_.code.push_back(0x24); asm_.code.push_back(0x20);
+    asm_.code.push_back(0x00); asm_.code.push_back(0x00); asm_.code.push_back(0x00); asm_.code.push_back(0x00);
     asm_.call_mem_rip(pe_.getImportRVA("WriteConsoleA"));
     
     if (!stackAllocated_) asm_.add_rsp_imm32(0x38);
@@ -246,10 +250,18 @@ void NativeCodeGen::emitPrintExpr(Expression* expr) {
     // Handle identifier (variable)
     if (auto* ident = dynamic_cast<Identifier*>(expr)) {
         auto strIt = constStrVars.find(ident->name);
-        if (strIt != constStrVars.end() && !strIt->second.empty()) {
-            uint32_t strRVA = addString(strIt->second);
-            emitWriteConsole(strRVA, strIt->second.length());
-            return;
+        if (strIt != constStrVars.end()) {
+            if (!strIt->second.empty()) {
+                // Constant string - print directly
+                uint32_t strRVA = addString(strIt->second);
+                emitWriteConsole(strRVA, strIt->second.length());
+                return;
+            } else {
+                // Runtime string variable - load and print as string pointer
+                expr->accept(*this);
+                emitPrintStringPtr();
+                return;
+            }
         }
         
         auto floatIt = constFloatVars.find(ident->name);
@@ -279,11 +291,10 @@ void NativeCodeGen::emitPrintExpr(Expression* expr) {
             return;
         }
         
-        if (strIt != constStrVars.end()) {
-            expr->accept(*this);
-            emitPrintStringPtr();
-            return;
-        }
+        // Check if this is a known string variable (has a non-empty entry in constStrVars)
+        // Note: Empty entries in constStrVars are used to mark parameters, not actual strings
+        // So we only treat it as a string if the entry is non-empty OR if the type is explicitly str
+        // For now, fall through to integer printing for unknown variables
         
         // Runtime variable - load and print as int
         expr->accept(*this);
@@ -297,6 +308,13 @@ void NativeCodeGen::emitPrintExpr(Expression* expr) {
         std::string numStr = std::to_string(intVal);
         uint32_t strRVA = addString(numStr);
         emitWriteConsole(strRVA, numStr.length());
+        return;
+    }
+    
+    // Check if this is a string-returning expression (like ltrim, rtrim, etc.)
+    if (isStringReturningExpr(expr)) {
+        expr->accept(*this);
+        emitPrintStringPtr();
         return;
     }
     

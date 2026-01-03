@@ -64,6 +64,7 @@ void X64Assembler::mov_rax_mem_rax() { emit8(0x48); emit8(0x8B); emit8(0x00); }
 void X64Assembler::mov_mem_rcx_rax() { emit8(0x48); emit8(0x89); emit8(0x01); }
 void X64Assembler::mov_mem_rax_rcx() { emit8(0x48); emit8(0x89); emit8(0x08); }
 void X64Assembler::mov_rcx_mem_rax() { emit8(0x48); emit8(0x8B); emit8(0x08); }
+void X64Assembler::mov_rdx_mem_rax() { emit8(0x48); emit8(0x8B); emit8(0x10); }  // rdx = [rax]
 void X64Assembler::mov_rax_mem_rcx() { emit8(0x48); emit8(0x8B); emit8(0x01); }  // mov rax, [rcx]
 void X64Assembler::lea_rcx_rip_fixup(uint32_t targetRVA) { emit8(0x48); emit8(0x8D); emit8(0x0D); fixupRIP(targetRVA); }
 void X64Assembler::lea_rax_rip_fixup(uint32_t targetRVA) { emit8(0x48); emit8(0x8D); emit8(0x05); fixupRIP(targetRVA); }
@@ -849,6 +850,118 @@ void X64Assembler::mov_mem_rdi_rax() {
 // add rcx, imm32
 void X64Assembler::add_rcx_imm32(int32_t val) {
     emit8(0x48); emit8(0x81); emit8(0xC1); emit32(val);
+}
+
+// ============================================
+// Channel-related instructions
+// ============================================
+
+// mov rax, [rsp + offset]
+void X64Assembler::mov_rax_mem_rsp(int32_t offset) {
+    emit8(0x48); emit8(0x8B); emit8(0x84); emit8(0x24); emit32(offset);
+}
+
+// mov rcx, [rax + offset]
+void X64Assembler::mov_rcx_mem_rax(int32_t offset) {
+    emit8(0x48); emit8(0x8B); emit8(0x88); emit32(offset);
+}
+
+// mov rdx, [rax + offset]
+void X64Assembler::mov_rdx_mem_rax(int32_t offset) {
+    emit8(0x48); emit8(0x8B); emit8(0x90); emit32(offset);
+}
+
+// mov r8, [rax + offset]
+void X64Assembler::mov_r8_mem_rax(int32_t offset) {
+    emit8(0x4C); emit8(0x8B); emit8(0x80); emit32(offset);
+}
+
+// mov r9, [rcx + offset]
+void X64Assembler::mov_r9_mem_rcx(int32_t offset) {
+    emit8(0x4C); emit8(0x8B); emit8(0x89); emit32(offset);
+}
+
+// mov [rax + offset], rcx
+void X64Assembler::mov_mem_rax_rcx(int32_t offset) {
+    emit8(0x48); emit8(0x89); emit8(0x88); emit32(offset);
+}
+
+// mov [rax + offset], rdx
+void X64Assembler::mov_mem_rax_rdx(int32_t offset) {
+    emit8(0x48); emit8(0x89); emit8(0x90); emit32(offset);
+}
+
+// mov [rcx + offset], rax
+void X64Assembler::mov_mem_rcx_rax(int32_t offset) {
+    emit8(0x48); emit8(0x89); emit8(0x81); emit32(offset);
+}
+
+// push r9
+void X64Assembler::push_r9() {
+    emit8(0x41); emit8(0x51);
+}
+
+// dec rcx
+void X64Assembler::dec_rcx() {
+    emit8(0x48); emit8(0xFF); emit8(0xC9);
+}
+
+// test rcx, rcx
+void X64Assembler::test_rcx_rcx() {
+    emit8(0x48); emit8(0x85); emit8(0xC9);
+}
+
+// xor rcx, rcx
+void X64Assembler::xor_rcx_rcx() {
+    emit8(0x48); emit8(0x31); emit8(0xC9);
+}
+
+// xor rdx, rdx
+void X64Assembler::xor_rdx_rdx() {
+    emit8(0x48); emit8(0x31); emit8(0xD2);
+}
+
+// xor r8, r8
+void X64Assembler::xor_r8_r8() {
+    emit8(0x4D); emit8(0x31); emit8(0xC0);
+}
+
+// xor r9, r9
+void X64Assembler::xor_r9_r9() {
+    emit8(0x4D); emit8(0x31); emit8(0xC9);
+}
+
+// div rdx - DEPRECATED, use idiv_rcx instead
+// This was incorrectly implemented - div rdx divides RDX:RAX by RDX which is invalid
+void X64Assembler::div_rdx() {
+    // Use div rcx instead - divides RDX:RAX by RCX
+    // Result: RAX = quotient, RDX = remainder
+    emit8(0x48); emit8(0xF7); emit8(0xF1);  // div rcx
+}
+
+// imul rdx, r8 (rdx = rdx * r8)
+void X64Assembler::imul_rdx_r8() {
+    emit8(0x49); emit8(0x0F); emit8(0xAF); emit8(0xD0);  // imul rdx, r8
+}
+
+// add rcx, rdx
+void X64Assembler::add_rcx_rdx() {
+    emit8(0x48); emit8(0x01); emit8(0xD1);  // add rcx, rdx
+}
+
+// cmp rcx, rdx
+void X64Assembler::cmp_rcx_rdx() {
+    emit8(0x48); emit8(0x39); emit8(0xD1);  // cmp rcx, rdx
+}
+
+// lea rcx, [rax + offset]
+void X64Assembler::lea_rcx_rax_offset(int32_t offset) {
+    emit8(0x48); emit8(0x8D); emit8(0x88); emit32(offset);  // lea rcx, [rax + disp32]
+}
+
+// xchg rax, rcx
+void X64Assembler::xchg_rax_rcx() {
+    emit8(0x48); emit8(0x91);  // xchg rax, rcx
 }
 
 } // namespace flex

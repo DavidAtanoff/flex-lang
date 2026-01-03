@@ -27,7 +27,7 @@ struct CallExpr : Expression { ExprPtr callee; std::vector<ExprPtr> args; std::v
 struct MemberExpr : Expression { ExprPtr object; std::string member; MemberExpr(ExprPtr obj, std::string m, SourceLocation loc) : object(std::move(obj)), member(std::move(m)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct IndexExpr : Expression { ExprPtr object; ExprPtr index; IndexExpr(ExprPtr obj, ExprPtr idx, SourceLocation loc) : object(std::move(obj)), index(std::move(idx)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct ListExpr : Expression { std::vector<ExprPtr> elements; ListExpr(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
-struct RecordExpr : Expression { std::vector<std::pair<std::string, ExprPtr>> fields; RecordExpr(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct RecordExpr : Expression { std::string typeName; std::vector<std::pair<std::string, ExprPtr>> fields; RecordExpr(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct MapExpr : Expression { std::vector<std::pair<ExprPtr, ExprPtr>> entries; MapExpr(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct RangeExpr : Expression { ExprPtr start; ExprPtr end; ExprPtr step; RangeExpr(ExprPtr s, ExprPtr e, ExprPtr st, SourceLocation loc) : start(std::move(s)), end(std::move(e)), step(std::move(st)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct LambdaExpr : Expression { std::vector<std::pair<std::string, std::string>> params; ExprPtr body; LambdaExpr(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
@@ -42,6 +42,28 @@ struct SpawnExpr : Expression { ExprPtr operand; SpawnExpr(ExprPtr e, SourceLoca
 struct DSLBlock : Expression { std::string dslName; std::string rawContent; DSLBlock(std::string name, std::string content, SourceLocation loc) : dslName(std::move(name)), rawContent(std::move(content)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct AssignExpr : Expression { ExprPtr target; TokenType op; ExprPtr value; AssignExpr(ExprPtr t, TokenType o, ExprPtr v, SourceLocation loc) : target(std::move(t)), op(o), value(std::move(v)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct PropagateExpr : Expression { ExprPtr operand; PropagateExpr(ExprPtr e, SourceLocation loc) : operand(std::move(e)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+
+// Channel expressions for inter-thread communication
+struct ChanSendExpr : Expression { ExprPtr channel; ExprPtr value; ChanSendExpr(ExprPtr ch, ExprPtr v, SourceLocation loc) : channel(std::move(ch)), value(std::move(v)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct ChanRecvExpr : Expression { ExprPtr channel; ChanRecvExpr(ExprPtr ch, SourceLocation loc) : channel(std::move(ch)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct MakeChanExpr : Expression { std::string elementType; int64_t bufferSize; MakeChanExpr(std::string t, int64_t sz, SourceLocation loc) : elementType(std::move(t)), bufferSize(sz) { location = loc; } void accept(ASTVisitor& visitor) override; };
+
+// Synchronization primitive expressions
+struct MakeMutexExpr : Expression { std::string elementType; MakeMutexExpr(std::string t, SourceLocation loc) : elementType(std::move(t)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct MakeRWLockExpr : Expression { std::string elementType; MakeRWLockExpr(std::string t, SourceLocation loc) : elementType(std::move(t)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct MakeCondExpr : Expression { MakeCondExpr(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct MakeSemaphoreExpr : Expression { int64_t initialCount; int64_t maxCount; MakeSemaphoreExpr(int64_t init, int64_t max, SourceLocation loc) : initialCount(init), maxCount(max) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct MutexLockExpr : Expression { ExprPtr mutex; MutexLockExpr(ExprPtr m, SourceLocation loc) : mutex(std::move(m)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct MutexUnlockExpr : Expression { ExprPtr mutex; MutexUnlockExpr(ExprPtr m, SourceLocation loc) : mutex(std::move(m)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct RWLockReadExpr : Expression { ExprPtr rwlock; RWLockReadExpr(ExprPtr r, SourceLocation loc) : rwlock(std::move(r)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct RWLockWriteExpr : Expression { ExprPtr rwlock; RWLockWriteExpr(ExprPtr r, SourceLocation loc) : rwlock(std::move(r)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct RWLockUnlockExpr : Expression { ExprPtr rwlock; RWLockUnlockExpr(ExprPtr r, SourceLocation loc) : rwlock(std::move(r)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct CondWaitExpr : Expression { ExprPtr cond; ExprPtr mutex; CondWaitExpr(ExprPtr c, ExprPtr m, SourceLocation loc) : cond(std::move(c)), mutex(std::move(m)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct CondSignalExpr : Expression { ExprPtr cond; CondSignalExpr(ExprPtr c, SourceLocation loc) : cond(std::move(c)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct CondBroadcastExpr : Expression { ExprPtr cond; CondBroadcastExpr(ExprPtr c, SourceLocation loc) : cond(std::move(c)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct SemAcquireExpr : Expression { ExprPtr sem; SemAcquireExpr(ExprPtr s, SourceLocation loc) : sem(std::move(s)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct SemReleaseExpr : Expression { ExprPtr sem; SemReleaseExpr(ExprPtr s, SourceLocation loc) : sem(std::move(s)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct SemTryAcquireExpr : Expression { ExprPtr sem; SemTryAcquireExpr(ExprPtr s, SourceLocation loc) : sem(std::move(s)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 
 struct Statement : ASTNode {};
 using StmtPtr = std::unique_ptr<Statement>;
@@ -60,8 +82,46 @@ struct ReturnStmt : Statement { ExprPtr value; ReturnStmt(ExprPtr v, SourceLocat
 struct BreakStmt : Statement { BreakStmt(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct ContinueStmt : Statement { ContinueStmt(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct TryStmt : Statement { ExprPtr tryExpr; ExprPtr elseExpr; TryStmt(ExprPtr t, ExprPtr e, SourceLocation loc) : tryExpr(std::move(t)), elseExpr(std::move(e)) { location = loc; } void accept(ASTVisitor& visitor) override; };
-struct FnDecl : Statement { std::string name; std::vector<std::string> typeParams; std::vector<std::pair<std::string, std::string>> params; std::string returnType; StmtPtr body; bool isPublic = false; bool isExtern = false; bool isAsync = false; bool isHot = false; bool isCold = false; bool isVariadic = false; FnDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } void accept(ASTVisitor& visitor) override; bool hasVariadicParams() const { for (const auto& p : params) { if (p.second == "...") return true; } return false; } };
-struct RecordDecl : Statement { std::string name; std::vector<std::string> typeParams; std::vector<std::pair<std::string, std::string>> fields; bool isPublic = false; RecordDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+// Calling convention for FFI
+enum class CallingConvention {
+    Default,    // Platform default (win64 on Windows)
+    Cdecl,      // C calling convention
+    Stdcall,    // Windows stdcall
+    Fastcall,   // Fastcall convention
+    Win64       // Windows x64 ABI
+};
+
+struct FnDecl : Statement { std::string name; std::vector<std::string> typeParams; std::vector<std::pair<std::string, std::string>> params; std::string returnType; StmtPtr body; bool isPublic = false; bool isExtern = false; bool isAsync = false; bool isHot = false; bool isCold = false; bool isVariadic = false; bool isNaked = false; CallingConvention callingConv = CallingConvention::Default; FnDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } void accept(ASTVisitor& visitor) override; bool hasVariadicParams() const { for (const auto& p : params) { if (p.second == "...") return true; } return false; } };
+// Bitfield specification for a record field
+struct BitfieldSpec {
+    int bitWidth = 0;          // Number of bits (0 = not a bitfield)
+    bool isBitfield() const { return bitWidth > 0; }
+};
+
+struct RecordDecl : Statement { 
+    std::string name; 
+    std::vector<std::string> typeParams; 
+    std::vector<std::pair<std::string, std::string>> fields; 
+    std::vector<BitfieldSpec> bitfields;  // Bitfield specs for each field (parallel to fields)
+    bool isPublic = false;
+    // Attributes for FFI/layout control
+    bool reprC = false;        // #[repr(C)] - C-compatible layout
+    bool reprPacked = false;   // #[repr(packed)] - no padding
+    int reprAlign = 0;         // #[repr(align(N))] - explicit alignment
+    RecordDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } 
+    void accept(ASTVisitor& visitor) override; 
+};
+struct UnionDecl : Statement { 
+    std::string name; 
+    std::vector<std::string> typeParams; 
+    std::vector<std::pair<std::string, std::string>> fields; 
+    bool isPublic = false;
+    // Attributes for FFI/layout control
+    bool reprC = false;        // #[repr(C)] - C-compatible layout
+    int reprAlign = 0;         // #[repr(align(N))] - explicit alignment
+    UnionDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } 
+    void accept(ASTVisitor& visitor) override; 
+};
 struct EnumDecl : Statement { std::string name; std::vector<std::string> typeParams; std::vector<std::pair<std::string, std::optional<int64_t>>> variants; EnumDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct TypeAlias : Statement { std::string name; std::string targetType; TypeAlias(std::string n, std::string t, SourceLocation loc) : name(std::move(n)), targetType(std::move(t)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct TraitDecl : Statement { std::string name; std::vector<std::string> typeParams; std::vector<std::string> superTraits; std::vector<std::unique_ptr<FnDecl>> methods; TraitDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } void accept(ASTVisitor& visitor) override; };
@@ -89,6 +149,8 @@ struct ModuleDecl : Statement {
     void accept(ASTVisitor& visitor) override;
 };
 struct DeleteStmt : Statement { ExprPtr expr; DeleteStmt(ExprPtr e, SourceLocation loc) : expr(std::move(e)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct LockStmt : Statement { ExprPtr mutex; StmtPtr body; LockStmt(ExprPtr m, StmtPtr b, SourceLocation loc) : mutex(std::move(m)), body(std::move(b)) { location = loc; } void accept(ASTVisitor& visitor) override; };
+struct AsmStmt : Statement { std::string code; std::vector<std::string> outputs; std::vector<std::string> inputs; std::vector<std::string> clobbers; AsmStmt(std::string c, SourceLocation loc) : code(std::move(c)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 struct Program : ASTNode { std::vector<StmtPtr> statements; Program(SourceLocation loc) { location = loc; } void accept(ASTVisitor& visitor) override; };
 
 struct ASTVisitor {
@@ -108,6 +170,24 @@ struct ASTVisitor {
     virtual void visit(AwaitExpr& node) = 0; virtual void visit(SpawnExpr& node) = 0;
     virtual void visit(DSLBlock& node) = 0; virtual void visit(AssignExpr& node) = 0;
     virtual void visit(PropagateExpr& node) = 0;
+    virtual void visit(ChanSendExpr& node) = 0;
+    virtual void visit(ChanRecvExpr& node) = 0;
+    virtual void visit(MakeChanExpr& node) = 0;
+    virtual void visit(MakeMutexExpr& node) = 0;
+    virtual void visit(MakeRWLockExpr& node) = 0;
+    virtual void visit(MakeCondExpr& node) = 0;
+    virtual void visit(MakeSemaphoreExpr& node) = 0;
+    virtual void visit(MutexLockExpr& node) = 0;
+    virtual void visit(MutexUnlockExpr& node) = 0;
+    virtual void visit(RWLockReadExpr& node) = 0;
+    virtual void visit(RWLockWriteExpr& node) = 0;
+    virtual void visit(RWLockUnlockExpr& node) = 0;
+    virtual void visit(CondWaitExpr& node) = 0;
+    virtual void visit(CondSignalExpr& node) = 0;
+    virtual void visit(CondBroadcastExpr& node) = 0;
+    virtual void visit(SemAcquireExpr& node) = 0;
+    virtual void visit(SemReleaseExpr& node) = 0;
+    virtual void visit(SemTryAcquireExpr& node) = 0;
     virtual void visit(ExprStmt& node) = 0;
     virtual void visit(VarDecl& node) = 0; virtual void visit(DestructuringDecl& node) = 0;
     virtual void visit(AssignStmt& node) = 0; virtual void visit(Block& node) = 0;
@@ -116,6 +196,7 @@ struct ASTVisitor {
     virtual void visit(ReturnStmt& node) = 0; virtual void visit(BreakStmt& node) = 0;
     virtual void visit(ContinueStmt& node) = 0; virtual void visit(TryStmt& node) = 0;
     virtual void visit(FnDecl& node) = 0; virtual void visit(RecordDecl& node) = 0;
+    virtual void visit(UnionDecl& node) = 0;
     virtual void visit(EnumDecl& node) = 0; virtual void visit(TypeAlias& node) = 0;
     virtual void visit(TraitDecl& node) = 0; virtual void visit(ImplBlock& node) = 0;
     virtual void visit(UnsafeBlock& node) = 0; virtual void visit(ImportStmt& node) = 0;
@@ -124,6 +205,8 @@ struct ASTVisitor {
     virtual void visit(UseStmt& node) = 0; 
     virtual void visit(ModuleDecl& node) = 0;
     virtual void visit(DeleteStmt& node) = 0;
+    virtual void visit(LockStmt& node) = 0;
+    virtual void visit(AsmStmt& node) = 0;
     virtual void visit(Program& node) = 0;
 };
 

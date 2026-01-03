@@ -295,9 +295,11 @@ void NativeCodeGen::visit(Program& node) {
             }
             impls_[implKey] = info;
         } else if (dynamic_cast<RecordDecl*>(stmt.get())) {
-            // Skip record declarations - they're type definitions, not executable code
+            // Process record declarations to register type information
+            stmt->accept(*this);
         } else if (dynamic_cast<EnumDecl*>(stmt.get())) {
-            // Skip enum declarations - they're type definitions
+            // Process enum declarations to register constant values
+            stmt->accept(*this);
         } else if (dynamic_cast<TypeAlias*>(stmt.get())) {
             // Skip type aliases
         } else {
@@ -383,11 +385,12 @@ void NativeCodeGen::visit(Program& node) {
     }
     
     // Calculate total stack needed for _start (top-level code)
-    int32_t topLevelStackSize = 0x100;
+    // Base size increased to handle builtins that allocate local storage
+    int32_t topLevelStackSize = 0x400;  // 1KB base for builtin allocations
     
     for (auto* stmt : topLevelStmts) {
         topLevelStackSize = std::max(topLevelStackSize, 
-            0x100 + calculateFunctionStackSize(stmt));
+            0x400 + calculateFunctionStackSize(stmt));
     }
     
     topLevelStackSize = ((topLevelStackSize + 0x38 + 15) / 16) * 16;
@@ -464,6 +467,11 @@ void NativeCodeGen::visit(Program& node) {
                 method->name = originalName;
             }
         }
+    }
+    
+    // Emit callback trampolines for C interop
+    for (const auto& [fnName, info] : callbacks_) {
+        emitCallbackTrampoline(fnName, info);
     }
     
     // Emit GC collection routine if GC is enabled

@@ -119,7 +119,10 @@ std::unique_ptr<Program> Parser::parse() {
     skipNewlines();
     while (!isAtEnd()) {
         try {
-            program->statements.push_back(declaration());
+            auto stmt = declaration();
+            if (stmt) {
+                program->statements.push_back(std::move(stmt));
+            }
         } catch (const FlexDiagnosticError& e) {
             e.render();
             synchronize();

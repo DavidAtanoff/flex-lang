@@ -11,12 +11,18 @@ enum class TokenType {
     FN, IF, ELSE, ELIF, FOR, WHILE, MATCH, RETURN,
     TRUE, FALSE, NIL, AND, OR, NOT, IN, TO, BY,
     TRY, ELSE_KW, USE, LAYER, MACRO, IMPORT, MODULE,
-    EXTERN, ASYNC, AWAIT, SPAWN, RECORD, ENUM,
+    EXTERN, ASYNC, AWAIT, SPAWN, RECORD, ENUM, UNION,
     LET, MUT, CONST, VAR,
-    UNSAFE, PTR, REF, NEW, DELETE,
+    UNSAFE, PTR, REF, NEW, DELETE, ASM,
     BREAK, CONTINUE,
     TYPE, ALIAS, SYNTAX,
     PUB, PRIV, SELF, SUPER, TRAIT, IMPL,
+    CHAN,  // Channel keyword for chan[T] type
+    MUTEX,  // Mutex keyword for Mutex[T] type
+    RWLOCK,  // RWLock keyword for RWLock[T] type
+    COND,  // Cond keyword for condition variable type
+    SEMAPHORE,  // Semaphore keyword for semaphore type
+    LOCK,  // lock keyword for scoped lock acquisition
     PLUS, MINUS, STAR, SLASH, PERCENT,
     EQ, NE, LT, GT, LE, GE,
     ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN,
@@ -28,6 +34,9 @@ enum class TokenType {
     LBRACKET, RBRACKET, LBRACE, RBRACE,
     NEWLINE, INDENT, DEDENT,
     CUSTOM_OP,
+    ATTRIBUTE,  // #[...] attribute
+    CHAN_SEND,  // <- for channel send (ch <- value)
+    CHAN_RECV,  // <- for channel receive (<- ch)
     END_OF_FILE, ERROR
 };
 
@@ -45,14 +54,21 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::LAYER: return "LAYER"; case TokenType::MACRO: return "MACRO"; case TokenType::IMPORT: return "IMPORT";
         case TokenType::MODULE: return "MODULE";
         case TokenType::EXTERN: return "EXTERN"; case TokenType::ASYNC: return "ASYNC"; case TokenType::AWAIT: return "AWAIT";
-        case TokenType::SPAWN: return "SPAWN"; case TokenType::RECORD: return "RECORD"; case TokenType::ENUM: return "ENUM";
+        case TokenType::SPAWN: return "SPAWN"; case TokenType::RECORD: return "RECORD"; case TokenType::ENUM: return "ENUM"; case TokenType::UNION: return "UNION";
         case TokenType::LET: return "LET"; case TokenType::MUT: return "MUT"; case TokenType::CONST: return "CONST";
         case TokenType::VAR: return "VAR"; case TokenType::UNSAFE: return "UNSAFE"; case TokenType::PTR: return "PTR";
         case TokenType::REF: return "REF"; case TokenType::NEW: return "NEW"; case TokenType::DELETE: return "DELETE";
+        case TokenType::ASM: return "ASM";
         case TokenType::BREAK: return "BREAK"; case TokenType::CONTINUE: return "CONTINUE";
         case TokenType::TYPE: return "TYPE"; case TokenType::ALIAS: return "ALIAS"; case TokenType::SYNTAX: return "SYNTAX";
         case TokenType::PUB: return "PUB"; case TokenType::PRIV: return "PRIV"; case TokenType::SELF: return "SELF";
         case TokenType::SUPER: return "SUPER"; case TokenType::TRAIT: return "TRAIT"; case TokenType::IMPL: return "IMPL";
+        case TokenType::CHAN: return "CHAN";
+        case TokenType::MUTEX: return "MUTEX";
+        case TokenType::RWLOCK: return "RWLOCK";
+        case TokenType::COND: return "COND";
+        case TokenType::SEMAPHORE: return "SEMAPHORE";
+        case TokenType::LOCK: return "LOCK";
         case TokenType::PLUS: return "PLUS"; case TokenType::MINUS: return "MINUS"; case TokenType::STAR: return "STAR";
         case TokenType::SLASH: return "SLASH"; case TokenType::PERCENT: return "PERCENT";
         case TokenType::EQ: return "EQ"; case TokenType::NE: return "NE"; case TokenType::LT: return "LT";
@@ -74,6 +90,9 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::LBRACE: return "LBRACE"; case TokenType::RBRACE: return "RBRACE";
         case TokenType::NEWLINE: return "NEWLINE"; case TokenType::INDENT: return "INDENT";
         case TokenType::DEDENT: return "DEDENT"; case TokenType::CUSTOM_OP: return "CUSTOM_OP";
+        case TokenType::ATTRIBUTE: return "ATTRIBUTE";
+        case TokenType::CHAN_SEND: return "CHAN_SEND";
+        case TokenType::CHAN_RECV: return "CHAN_RECV";
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::ERROR: return "ERROR"; default: return "UNKNOWN";
     }

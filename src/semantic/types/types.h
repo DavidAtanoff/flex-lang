@@ -24,7 +24,13 @@ enum class TypeKind {
     TYPE_PARAM,     // Generic type parameter (e.g., T in fn swap[T])
     GENERIC,        // Generic type instantiation (e.g., List[int])
     TRAIT,          // Trait type
-    TRAIT_OBJECT    // Dynamic trait object (dyn Trait)
+    TRAIT_OBJECT,   // Dynamic trait object (dyn Trait)
+    FIXED_ARRAY,    // Fixed-size array (e.g., [int; 10])
+    CHANNEL,        // Channel type for inter-thread communication (e.g., chan[int])
+    MUTEX,          // Mutex type for mutual exclusion (e.g., Mutex[int])
+    RWLOCK,         // Reader-writer lock type (e.g., RWLock[int])
+    COND,           // Condition variable type
+    SEMAPHORE       // Counting semaphore type
 };
 
 struct Type {
@@ -155,6 +161,64 @@ struct GenericType : Type {
     TypePtr clone() const override;
 };
 
+// Fixed-size array type (e.g., [int; 10], [[int; 3]; 4])
+struct FixedArrayType : Type {
+    TypePtr element;                               // Element type (can be another FixedArrayType for multi-dim)
+    size_t size;                                   // Number of elements
+    FixedArrayType(TypePtr elem, size_t sz) : Type(TypeKind::FIXED_ARRAY), element(std::move(elem)), size(sz) {}
+    std::string toString() const override;
+    bool equals(const Type* other) const override;
+    TypePtr clone() const override;
+    size_t totalSize() const;                      // Total size in bytes (element size * count)
+    size_t elementSize() const;                    // Size of one element in bytes
+    size_t dimensions() const;                     // Number of dimensions (1 for [T;N], 2 for [[T;N];M], etc.)
+    std::vector<size_t> shape() const;             // Shape of the array (e.g., {4, 3} for [[int;3];4])
+};
+
+// Channel type for inter-thread communication (e.g., chan[int], chan[int, 10])
+struct ChannelType : Type {
+    TypePtr element;                               // Element type being sent/received
+    size_t bufferSize;                             // Buffer capacity (0 = unbuffered/synchronous)
+    ChannelType(TypePtr elem, size_t buf = 0) : Type(TypeKind::CHANNEL), element(std::move(elem)), bufferSize(buf) {}
+    std::string toString() const override;
+    bool equals(const Type* other) const override;
+    TypePtr clone() const override;
+};
+
+// Mutex type for mutual exclusion (e.g., Mutex[int])
+struct MutexType : Type {
+    TypePtr element;                               // Protected data type
+    MutexType(TypePtr elem) : Type(TypeKind::MUTEX), element(std::move(elem)) {}
+    std::string toString() const override;
+    bool equals(const Type* other) const override;
+    TypePtr clone() const override;
+};
+
+// Reader-writer lock type (e.g., RWLock[int])
+struct RWLockType : Type {
+    TypePtr element;                               // Protected data type
+    RWLockType(TypePtr elem) : Type(TypeKind::RWLOCK), element(std::move(elem)) {}
+    std::string toString() const override;
+    bool equals(const Type* other) const override;
+    TypePtr clone() const override;
+};
+
+// Condition variable type
+struct CondType : Type {
+    CondType() : Type(TypeKind::COND) {}
+    std::string toString() const override;
+    bool equals(const Type* other) const override;
+    TypePtr clone() const override;
+};
+
+// Counting semaphore type
+struct SemaphoreType : Type {
+    SemaphoreType() : Type(TypeKind::SEMAPHORE) {}
+    std::string toString() const override;
+    bool equals(const Type* other) const override;
+    TypePtr clone() const override;
+};
+
 // Trait implementation record
 struct TraitImpl {
     std::string traitName;
@@ -186,6 +250,12 @@ public:
     TypePtr genericType(const std::string& baseName, const std::vector<TypePtr>& typeArgs);
     TraitPtr traitType(const std::string& name);
     TypePtr traitObjectType(const std::string& traitName);
+    TypePtr fixedArrayType(TypePtr element, size_t size);  // Fixed-size array type
+    TypePtr channelType(TypePtr element, size_t bufferSize = 0);  // Channel type for inter-thread communication
+    TypePtr mutexType(TypePtr element);  // Mutex type for mutual exclusion
+    TypePtr rwlockType(TypePtr element);  // Reader-writer lock type
+    TypePtr condType();  // Condition variable type
+    TypePtr semaphoreType();  // Counting semaphore type
     
     // Trait registration and lookup
     void registerTrait(const std::string& name, TraitPtr trait);

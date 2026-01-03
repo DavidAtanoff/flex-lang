@@ -16,6 +16,7 @@ enum class OpCode : uint8_t {
     CALL, RETURN,
     MAKE_LIST, MAKE_RECORD, MAKE_MAP, MAKE_RANGE, GET_INDEX, SET_INDEX, GET_MEMBER, SET_MEMBER,
     GET_ITER, ITER_NEXT,
+    MAKE_CHAN, CHAN_SEND, CHAN_RECV,  // Channel operations
     PRINT, HALT
 };
 
@@ -55,7 +56,10 @@ inline std::string opCodeToString(OpCode op) {
         case OpCode::MAKE_RANGE: return "MAKE_RANGE"; case OpCode::GET_INDEX: return "GET_INDEX";
         case OpCode::SET_INDEX: return "SET_INDEX"; case OpCode::GET_MEMBER: return "GET_MEMBER";
         case OpCode::SET_MEMBER: return "SET_MEMBER"; case OpCode::GET_ITER: return "GET_ITER";
-        case OpCode::ITER_NEXT: return "ITER_NEXT"; case OpCode::PRINT: return "PRINT"; case OpCode::HALT: return "HALT";
+        case OpCode::ITER_NEXT: return "ITER_NEXT"; 
+        case OpCode::MAKE_CHAN: return "MAKE_CHAN"; case OpCode::CHAN_SEND: return "CHAN_SEND";
+        case OpCode::CHAN_RECV: return "CHAN_RECV";
+        case OpCode::PRINT: return "PRINT"; case OpCode::HALT: return "HALT";
     }
     return "UNKNOWN";
 }

@@ -200,6 +200,294 @@ private:
     std::vector<std::unique_ptr<FnDecl>> specializedFunctions_;    // Specialized function copies
     std::vector<std::unique_ptr<RecordDecl>> specializedRecords_;  // Specialized record copies
     
+    // Record type information for field access
+    struct RecordTypeInfo {
+        std::string name;
+        std::vector<std::string> fieldNames;               // Field names in order
+        std::vector<std::string> fieldTypes;               // Field types
+        std::vector<int32_t> fieldOffsets;                 // Cached field offsets (computed once)
+        std::vector<int> fieldBitWidths;                   // Bitfield widths (0 = not a bitfield)
+        std::vector<int> fieldBitOffsets;                  // Bit offset within storage unit for bitfields
+        int32_t totalSize = 0;                             // Total record size in bytes
+        bool reprC = false;                                // C-compatible layout
+        bool reprPacked = false;                           // No padding
+        int reprAlign = 0;                                 // Explicit alignment
+        bool isUnion = false;                              // Union type (all fields at offset 0)
+        bool offsetsComputed = false;                      // Whether offsets have been computed
+        bool hasBitfields = false;                         // Whether record has any bitfields
+    };
+    std::map<std::string, RecordTypeInfo> recordTypes_;    // Record name -> type info
+    std::map<std::string, std::string> varRecordTypes_;    // Variable name -> record type name
+    
+    // Fixed-size array type tracking
+    struct FixedArrayInfo {
+        std::string elementType;                           // Element type (e.g., "int", "[int; 3]")
+        size_t size;                                       // Number of elements
+        int32_t elementSize;                               // Size of each element in bytes
+    };
+    std::map<std::string, FixedArrayInfo> varFixedArrayTypes_;  // Variable name -> fixed array info
+    
+    // Function pointer type tracking
+    std::set<std::string> fnPtrVars_;                      // Variables that hold function pointers
+    
+    // Callback/trampoline support for passing Flex functions to C
+    struct CallbackInfo {
+        std::string flexFnName;                            // Name of the Flex function
+        std::string trampolineLabel;                       // Label for the trampoline wrapper
+        CallingConvention callingConv;                     // Calling convention for the callback
+        std::vector<std::string> paramTypes;               // Parameter types
+        std::string returnType;                            // Return type
+    };
+    std::map<std::string, CallbackInfo> callbacks_;        // Function name -> callback info
+    std::map<std::string, uint32_t> callbackTrampolines_;  // Trampoline label -> code RVA
+    
+    // Function calling convention tracking
+    std::map<std::string, CallingConvention> fnCallingConvs_;  // Function name -> calling convention
+    
+    // Channel support
+    struct ChannelInfo {
+        std::string elementType;                               // Element type being sent/received
+        size_t bufferSize;                                     // Buffer capacity (0 = unbuffered)
+        int32_t elementSize;                                   // Size of each element in bytes
+    };
+    std::map<std::string, ChannelInfo> varChannelTypes_;       // Variable name -> channel info
+    
+    // Channel helper methods
+    void emitChannelCreate(size_t bufferSize, int32_t elementSize);  // Create a new channel
+    void emitChannelSend();                                          // Send value to channel (channel in RAX, value in RCX)
+    void emitChannelRecv();                                          // Receive value from channel (channel in RAX, result in RAX)
+    void emitChannelClose();                                         // Close a channel (channel in RAX)
+    
+    // Mutex helper methods
+    void emitMutexCreate(int32_t elementSize);                       // Create a new mutex
+    void emitMutexLock();                                            // Lock mutex (mutex in RAX)
+    void emitMutexUnlock();                                          // Unlock mutex (mutex in RAX)
+    
+    // RWLock helper methods
+    void emitRWLockCreate(int32_t elementSize);                      // Create a new RWLock
+    void emitRWLockReadLock();                                       // Acquire read lock (rwlock in RAX)
+    void emitRWLockWriteLock();                                      // Acquire write lock (rwlock in RAX)
+    void emitRWLockUnlock();                                         // Release lock (rwlock in RAX)
+    
+    // Condition variable helper methods
+    void emitCondCreate();                                           // Create a new condition variable
+    void emitCondWait();                                             // Wait on condition (cond in RAX, mutex in RCX)
+    void emitCondSignal();                                           // Signal one waiter (cond in RAX)
+    void emitCondBroadcast();                                        // Signal all waiters (cond in RAX)
+    
+    // Semaphore helper methods
+    void emitSemaphoreCreate(int64_t initialCount, int64_t maxCount); // Create a new semaphore
+    void emitSemaphoreAcquire();                                     // Acquire semaphore (sem in RAX)
+    void emitSemaphoreRelease();                                     // Release semaphore (sem in RAX)
+    void emitSemaphoreTryAcquire();                                  // Try to acquire (sem in RAX, result in RAX)
+    
+    // Callback/trampoline helpers
+    void emitCallbackTrampoline(const std::string& fnName, const CallbackInfo& info);
+    uint32_t getCallbackAddress(const std::string& fnName);  // Get address of callback wrapper
+    void collectCallbackFunctions(Program& program);         // Scan for functions that need callbacks
+    
+    // Record layout helpers
+    int32_t getTypeSize(const std::string& typeName);      // Get size of a type in bytes
+    int32_t getTypeAlignment(const std::string& typeName); // Get alignment of a type in bytes
+    void computeRecordLayout(RecordTypeInfo& info);        // Compute field offsets for a record
+    int32_t getRecordFieldOffset(const std::string& recordName, int fieldIndex);  // Get field offset
+    int32_t getRecordSize(const std::string& recordName);  // Get total record size
+    
+    // Struct-by-value helpers for FFI
+    bool isSmallStruct(const std::string& typeName);       // Check if struct fits in registers (<=16 bytes)
+    void emitStructByValuePass(const std::string& typeName, int argIndex);  // Pass struct in registers
+    void emitStructByValueReturn(const std::string& typeName);  // Return struct in registers
+    void emitLoadStructToRegs(const std::string& typeName);    // Load struct from RAX ptr to RCX:RDX
+    void emitStoreRegsToStruct(const std::string& typeName);   // Store RCX:RDX to struct at RAX ptr
+    
+    // Bitfield helpers
+    void emitBitfieldRead(const std::string& recordName, int fieldIndex);   // Read bitfield value
+    void emitBitfieldWrite(const std::string& recordName, int fieldIndex);  // Write bitfield value
+    
+    // Modular expression helpers (codegen_expr_assign.cpp)
+    void emitIndexAssignment(IndexExpr* indexExpr, AssignExpr& node);
+    void emitMapIndexAssignment(IndexExpr* indexExpr, StringLiteral* strKey);
+    void emitFixedArrayIndexAssignment(IndexExpr* indexExpr, const FixedArrayInfo& info);
+    
+    // Modular expression helpers (codegen_expr_index.cpp)
+    void emitMapIndexAccess(IndexExpr& node, StringLiteral* strKey);
+    void emitFixedArrayIndexAccess(IndexExpr& node, const FixedArrayInfo& info);
+    
+    // Modular statement helpers (codegen_stmt_vardecl.cpp)
+    void emitUninitializedVarDecl(VarDecl& node);
+    void emitFixedArrayDecl(VarDecl& node);
+    
+    // Modular statement helpers (codegen_stmt_assign.cpp)
+    void emitIdentifierAssign(Identifier* id, AssignStmt& node, bool isFloat, 
+                              bool valueIsConst, bool valueIsSmall, int64_t constVal);
+    void emitRegisterAssign(VarRegister reg, AssignStmt& node, bool isFloat,
+                            bool valueIsConst, bool valueIsSmall, int64_t constVal);
+    void emitFloatCompoundAssign(int32_t offset, TokenType op);
+    void emitIntCompoundAssign(int32_t offset, TokenType op);
+    void emitDerefAssign(DerefExpr* deref, AssignStmt& node);
+    void emitIndexAssign(IndexExpr* indexExpr, AssignStmt& node);
+    void emitFixedArrayAssign(IndexExpr* indexExpr, AssignStmt& node, const FixedArrayInfo& info);
+    void emitMemberAssign(MemberExpr* member, AssignStmt& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_system.cpp)
+    void emitSystemExit(CallExpr& node);
+    void emitSystemSleep(CallExpr& node);
+    void emitSystemPlatform(CallExpr& node);
+    void emitSystemArch(CallExpr& node);
+    void emitSystemHostname(CallExpr& node);
+    void emitSystemUsername(CallExpr& node);
+    void emitSystemCpuCount(CallExpr& node);
+    void emitTimeNow(CallExpr& node);
+    void emitTimeNowMs(CallExpr& node);
+    void emitTimeYear(CallExpr& node);
+    void emitTimeMonth(CallExpr& node);
+    void emitTimeDay(CallExpr& node);
+    void emitTimeHour(CallExpr& node);
+    void emitTimeMinute(CallExpr& node);
+    void emitTimeSecond(CallExpr& node);
+    void emitGetLocalTimeField(int32_t fieldOffset);
+    
+    // Modular builtin helpers (codegen_call_builtins_string.cpp)
+    void emitStringLen(CallExpr& node);
+    void emitStringUpper(CallExpr& node);
+    void emitStringLower(CallExpr& node);
+    void emitStringTrim(CallExpr& node);
+    void emitStringStartsWith(CallExpr& node);
+    void emitStringEndsWith(CallExpr& node);
+    void emitStringSubstring(CallExpr& node);
+    void emitStringReplace(CallExpr& node);
+    void emitStringSplit(CallExpr& node);
+    void emitStringJoin(CallExpr& node);
+    void emitStringIndexOf(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_io.cpp)
+    void emitPrint(CallExpr& node, bool newline);
+    void emitRead(CallExpr& node);
+    void emitFileOpen(CallExpr& node);
+    void emitFileRead(CallExpr& node);
+    void emitFileWrite(CallExpr& node);
+    void emitFileClose(CallExpr& node);
+    void emitFileSize(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_math.cpp)
+    void emitMathAbs(CallExpr& node);
+    void emitMathMin(CallExpr& node);
+    void emitMathMax(CallExpr& node);
+    void emitMathSqrt(CallExpr& node);
+    void emitMathFloor(CallExpr& node);
+    void emitMathCeil(CallExpr& node);
+    void emitMathRound(CallExpr& node);
+    void emitMathPow(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_conv.cpp)
+    void emitConvInt(CallExpr& node);
+    void emitConvFloat(CallExpr& node);
+    void emitConvStr(CallExpr& node);
+    void emitConvBool(CallExpr& node);
+    void emitConvType(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_list.cpp)
+    void emitListPush(CallExpr& node);
+    void emitListPop(CallExpr& node);
+    void emitListContains(CallExpr& node);
+    void emitRange(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_result.cpp)
+    void emitResultOk(CallExpr& node);
+    void emitResultErr(CallExpr& node);
+    void emitResultIsOk(CallExpr& node);
+    void emitResultIsErr(CallExpr& node);
+    void emitResultUnwrap(CallExpr& node);
+    void emitResultUnwrapOr(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_memory.cpp)
+    void emitMemAlloc(CallExpr& node);
+    void emitMemFree(CallExpr& node);
+    void emitMemStackAlloc(CallExpr& node);
+    void emitMemSizeof(CallExpr& node);
+    void emitMemAlignof(CallExpr& node);
+    void emitMemOffsetof(CallExpr& node);
+    void emitMemPlacementNew(CallExpr& node);
+    void emitMemcpy(CallExpr& node);
+    void emitMemset(CallExpr& node);
+    void emitMemmove(CallExpr& node);
+    void emitMemcmp(CallExpr& node);
+    
+    // Modular builtin helpers (codegen_call_builtins_gc.cpp)
+    void emitGCCollect(CallExpr& node);
+    void emitGCStats(CallExpr& node);
+    void emitGCCount(CallExpr& node);
+    void emitGCPin(CallExpr& node);
+    void emitGCUnpin(CallExpr& node);
+    void emitGCAddRoot(CallExpr& node);
+    void emitGCRemoveRoot(CallExpr& node);
+    void emitSetAllocator(CallExpr& node);
+    void emitResetAllocator(CallExpr& node);
+    void emitAllocatorStats(CallExpr& node);
+    void emitAllocatorPeak(CallExpr& node);
+    
+    // Extended string builtins (call/codegen_call_builtins_string_ext.cpp)
+    void emitStringLtrim(CallExpr& node);
+    void emitStringRtrim(CallExpr& node);
+    void emitStringCharAt(CallExpr& node);
+    void emitStringRepeat(CallExpr& node);
+    void emitStringReverse(CallExpr& node);
+    void emitStringIsDigit(CallExpr& node);
+    void emitStringIsAlpha(CallExpr& node);
+    void emitStringOrd(CallExpr& node);
+    void emitStringChr(CallExpr& node);
+    void emitStringLastIndexOf(CallExpr& node);
+    
+    // Extended math builtins (call/codegen_call_builtins_math_ext.cpp)
+    void emitMathSin(CallExpr& node);
+    void emitMathCos(CallExpr& node);
+    void emitMathTan(CallExpr& node);
+    void emitMathExp(CallExpr& node);
+    void emitMathLog(CallExpr& node);
+    void emitMathTrunc(CallExpr& node);
+    void emitMathSign(CallExpr& node);
+    void emitMathClamp(CallExpr& node);
+    void emitMathLerp(CallExpr& node);
+    void emitMathGcd(CallExpr& node);
+    void emitMathLcm(CallExpr& node);
+    void emitMathFactorial(CallExpr& node);
+    void emitMathFib(CallExpr& node);
+    void emitMathRandom(CallExpr& node);
+    void emitMathIsNan(CallExpr& node);
+    void emitMathIsInf(CallExpr& node);
+    
+    // Extended list builtins (call/codegen_call_builtins_list_ext.cpp)
+    void emitListFirst(CallExpr& node);
+    void emitListLast(CallExpr& node);
+    void emitListGet(CallExpr& node);
+    void emitListReverse(CallExpr& node);
+    void emitListIndex(CallExpr& node);
+    void emitListIncludes(CallExpr& node);
+    void emitListTake(CallExpr& node);
+    void emitListDrop(CallExpr& node);
+    void emitListMinOf(CallExpr& node);
+    void emitListMaxOf(CallExpr& node);
+    
+    // Extended time builtins (call/codegen_call_builtins_time_ext.cpp)
+    void emitTimeNowUs(CallExpr& node);
+    void emitTimeWeekday(CallExpr& node);
+    void emitTimeDayOfYear(CallExpr& node);
+    void emitTimeMakeTime(CallExpr& node);
+    void emitTimeAddDays(CallExpr& node);
+    void emitTimeAddHours(CallExpr& node);
+    void emitTimeDiffDays(CallExpr& node);
+    void emitTimeIsLeapYear(CallExpr& node);
+    
+    // Extended system builtins (call/codegen_call_builtins_system_ext.cpp)
+    void emitSystemEnv(CallExpr& node);
+    void emitSystemSetEnv(CallExpr& node);
+    void emitSystemHomeDir(CallExpr& node);
+    void emitSystemTempDir(CallExpr& node);
+    void emitSystemAssert(CallExpr& node);
+    void emitSystemPanic(CallExpr& node);
+    void emitSystemDebug(CallExpr& node);
+    void emitSystemCommand(CallExpr& node);
+    
     // Generics helper methods
     void collectGenericInstantiations(Program& program);   // Collect all generic instantiations
     void emitSpecializedFunctions();                       // Emit code for specialized functions
@@ -234,6 +522,13 @@ private:
     void visit(IndexExpr& node) override;
     void visit(ListExpr& node) override;
     void visit(RecordExpr& node) override;
+    
+    // Call dispatch helpers (codegen_call_dispatch.cpp)
+    void emitStandardFunctionCall(CallExpr& node, const std::string& callTarget);
+    void emitFloatFunctionCall(CallExpr& node, const std::string& callTarget);
+    void emitFunctionPointerCall(CallExpr& node, const std::string& varName);
+    void emitClosureCall(CallExpr& node);
+
     void visit(MapExpr& node) override;
     void visit(RangeExpr& node) override;
     void visit(LambdaExpr& node) override;
@@ -248,6 +543,24 @@ private:
     void visit(DSLBlock& node) override;
     void visit(AssignExpr& node) override;
     void visit(PropagateExpr& node) override;
+    void visit(ChanSendExpr& node) override;
+    void visit(ChanRecvExpr& node) override;
+    void visit(MakeChanExpr& node) override;
+    void visit(MakeMutexExpr& node) override;
+    void visit(MakeRWLockExpr& node) override;
+    void visit(MakeCondExpr& node) override;
+    void visit(MakeSemaphoreExpr& node) override;
+    void visit(MutexLockExpr& node) override;
+    void visit(MutexUnlockExpr& node) override;
+    void visit(RWLockReadExpr& node) override;
+    void visit(RWLockWriteExpr& node) override;
+    void visit(RWLockUnlockExpr& node) override;
+    void visit(CondWaitExpr& node) override;
+    void visit(CondSignalExpr& node) override;
+    void visit(CondBroadcastExpr& node) override;
+    void visit(SemAcquireExpr& node) override;
+    void visit(SemReleaseExpr& node) override;
+    void visit(SemTryAcquireExpr& node) override;
     void visit(ExprStmt& node) override;
     void visit(VarDecl& node) override;
     void visit(DestructuringDecl& node) override;
@@ -263,6 +576,7 @@ private:
     void visit(TryStmt& node) override;
     void visit(FnDecl& node) override;
     void visit(RecordDecl& node) override;
+    void visit(UnionDecl& node) override;
     void visit(EnumDecl& node) override;
     void visit(TypeAlias& node) override;
     void visit(TraitDecl& node) override;
@@ -276,6 +590,8 @@ private:
     void visit(UseStmt& node) override;
     void visit(ModuleDecl& node) override;
     void visit(DeleteStmt& node) override;
+    void visit(LockStmt& node) override;
+    void visit(AsmStmt& node) override;
     void visit(Program& node) override;
 };
 

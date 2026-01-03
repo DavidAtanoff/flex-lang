@@ -84,6 +84,24 @@ private:
     void visit(DSLBlock& node) override;
     void visit(AssignExpr& node) override;
     void visit(PropagateExpr& node) override;
+    void visit(ChanSendExpr& node) override;
+    void visit(ChanRecvExpr& node) override;
+    void visit(MakeChanExpr& node) override;
+    void visit(MakeMutexExpr& node) override;
+    void visit(MakeRWLockExpr& node) override;
+    void visit(MakeCondExpr& node) override;
+    void visit(MakeSemaphoreExpr& node) override;
+    void visit(MutexLockExpr& node) override;
+    void visit(MutexUnlockExpr& node) override;
+    void visit(RWLockReadExpr& node) override;
+    void visit(RWLockWriteExpr& node) override;
+    void visit(RWLockUnlockExpr& node) override;
+    void visit(CondWaitExpr& node) override;
+    void visit(CondSignalExpr& node) override;
+    void visit(CondBroadcastExpr& node) override;
+    void visit(SemAcquireExpr& node) override;
+    void visit(SemReleaseExpr& node) override;
+    void visit(SemTryAcquireExpr& node) override;
     void visit(ExprStmt& node) override;
     void visit(VarDecl& node) override;
     void visit(DestructuringDecl& node) override;
@@ -99,6 +117,7 @@ private:
     void visit(TryStmt& node) override;
     void visit(FnDecl& node) override;
     void visit(RecordDecl& node) override;
+    void visit(UnionDecl& node) override;
     void visit(EnumDecl& node) override;
     void visit(TypeAlias& node) override;
     void visit(TraitDecl& node) override;
@@ -112,6 +131,8 @@ private:
     void visit(UseStmt& node) override;
     void visit(ModuleDecl& node) override;
     void visit(DeleteStmt& node) override;
+    void visit(LockStmt& node) override;
+    void visit(AsmStmt& node) override;
     void visit(Program& node) override;
     
     std::unordered_map<Expression*, TypePtr> exprTypes_;

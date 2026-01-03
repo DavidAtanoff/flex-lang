@@ -5,7 +5,7 @@ namespace flex {
 namespace stdlib {
 
 void registerAll(std::unordered_map<std::string, Value>& globals) {
-    registerIO(globals);
+    // IO is now in native codegen (open, read, write, close, file_size)
     registerString(globals);
     registerMath(globals);
     registerList(globals);

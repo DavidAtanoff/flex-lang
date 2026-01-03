@@ -31,6 +31,24 @@ void SpawnExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void DSLBlock::accept(ASTVisitor& v) { v.visit(*this); }
 void AssignExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void PropagateExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void ChanSendExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void ChanRecvExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MakeChanExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MakeMutexExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MakeRWLockExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MakeCondExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MakeSemaphoreExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MutexLockExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MutexUnlockExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void RWLockReadExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void RWLockWriteExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void RWLockUnlockExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void CondWaitExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void CondSignalExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void CondBroadcastExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void SemAcquireExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void SemReleaseExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void SemTryAcquireExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void ExprStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void VarDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void DestructuringDecl::accept(ASTVisitor& v) { v.visit(*this); }
@@ -46,6 +64,7 @@ void ContinueStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void TryStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void FnDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void RecordDecl::accept(ASTVisitor& v) { v.visit(*this); }
+void UnionDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void EnumDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void TypeAlias::accept(ASTVisitor& v) { v.visit(*this); }
 void TraitDecl::accept(ASTVisitor& v) { v.visit(*this); }
@@ -59,6 +78,8 @@ void LayerDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void UseStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void ModuleDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void DeleteStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void LockStmt::accept(ASTVisitor& v) { v.visit(*this); }
+void AsmStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void Program::accept(ASTVisitor& v) { v.visit(*this); }
 
 } // namespace flex

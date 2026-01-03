@@ -95,6 +95,9 @@ void DeadCodeEliminationPass::collectCallsFromStatement(Statement* stmt, std::un
         collectCallsFromExpression(tryStmt->tryExpr.get(), calls);
         collectCallsFromExpression(tryStmt->elseExpr.get(), calls);
     }
+    else if (auto* unsafeBlock = dynamic_cast<UnsafeBlock*>(stmt)) {
+        collectCallsFromStatement(unsafeBlock->body.get(), calls);
+    }
 }
 
 void DeadCodeEliminationPass::collectCallsFromExpression(Expression* expr, std::unordered_set<std::string>& calls) {
@@ -188,6 +191,16 @@ void DeadCodeEliminationPass::collectCallsFromExpression(Expression* expr, std::
     }
     else if (auto* await = dynamic_cast<AwaitExpr*>(expr)) {
         collectCallsFromExpression(await->operand.get(), calls);
+    }
+    else if (auto* addressOf = dynamic_cast<AddressOfExpr*>(expr)) {
+        // When taking address of a function, mark it as called/referenced
+        if (auto* ident = dynamic_cast<Identifier*>(addressOf->operand.get())) {
+            calls.insert(ident->name);
+        }
+        collectCallsFromExpression(addressOf->operand.get(), calls);
+    }
+    else if (auto* deref = dynamic_cast<DerefExpr*>(expr)) {
+        collectCallsFromExpression(deref->operand.get(), calls);
     }
 }
 
@@ -307,6 +320,9 @@ void DeadCodeEliminationPass::collectFromStatement(Statement* stmt) {
         collectFromExpression(tryStmt->tryExpr.get());
         collectFromExpression(tryStmt->elseExpr.get());
     }
+    else if (auto* unsafeBlock = dynamic_cast<UnsafeBlock*>(stmt)) {
+        collectFromStatement(unsafeBlock->body.get());
+    }
 }
 
 void DeadCodeEliminationPass::collectFromExpression(Expression* expr) {
@@ -399,6 +415,16 @@ void DeadCodeEliminationPass::collectFromExpression(Expression* expr) {
     else if (auto* await = dynamic_cast<AwaitExpr*>(expr)) {
         collectFromExpression(await->operand.get());
     }
+    else if (auto* addressOf = dynamic_cast<AddressOfExpr*>(expr)) {
+        // When taking address of a function, mark it as used
+        if (auto* ident = dynamic_cast<Identifier*>(addressOf->operand.get())) {
+            calledFunctions_.insert(ident->name);
+        }
+        collectFromExpression(addressOf->operand.get());
+    }
+    else if (auto* deref = dynamic_cast<DerefExpr*>(expr)) {
+        collectFromExpression(deref->operand.get());
+    }
 }
 
 void DeadCodeEliminationPass::removeDeadCode(Program& ast) {
@@ -467,6 +493,13 @@ void DeadCodeEliminationPass::removeDeadFromBlock(std::vector<StmtPtr>& statemen
             removeUnreachableCode(moduleDecl->body);
             simplifyConstantConditions(moduleDecl->body);
             removeDeadFromBlock(moduleDecl->body);
+        }
+        else if (auto* unsafeBlock = dynamic_cast<UnsafeBlock*>(stmt.get())) {
+            if (auto* body = dynamic_cast<Block*>(unsafeBlock->body.get())) {
+                removeUnreachableCode(body->statements);
+                simplifyConstantConditions(body->statements);
+                removeDeadFromBlock(body->statements);
+            }
         }
     }
 }

@@ -273,4 +273,121 @@ void Compiler::visit(PropagateExpr& node) {
     // For now, this is a simplified implementation
 }
 
+void Compiler::visit(ChanSendExpr& node) {
+    // Channel send: ch <- value
+    // For bytecode VM, we need to call a builtin
+    node.channel->accept(*this);
+    node.value->accept(*this);
+    emit(OpCode::CHAN_SEND);
+}
+
+void Compiler::visit(ChanRecvExpr& node) {
+    // Channel receive: <- ch
+    node.channel->accept(*this);
+    emit(OpCode::CHAN_RECV);
+}
+
+void Compiler::visit(MakeChanExpr& node) {
+    // Create a new channel
+    int typeIdx = addConstant(Value(node.elementType));
+    emitOp(OpCode::CONST, typeIdx);
+    int sizeIdx = addConstant(Value(node.bufferSize));
+    emitOp(OpCode::CONST, sizeIdx);
+    emit(OpCode::MAKE_CHAN);
+}
+
+// Synchronization primitives - stub implementations for bytecode VM
+// These are primarily implemented in native codegen
+
+void Compiler::visit(MakeMutexExpr& node) {
+    (void)node;
+    // Stub - native codegen handles this
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(MakeRWLockExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(MakeCondExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(MakeSemaphoreExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(MutexLockExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(MutexUnlockExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(RWLockReadExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(RWLockWriteExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(RWLockUnlockExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(CondWaitExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(CondSignalExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(CondBroadcastExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(SemAcquireExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(SemReleaseExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
+void Compiler::visit(SemTryAcquireExpr& node) {
+    (void)node;
+    int idx = addConstant(Value());
+    emitOp(OpCode::CONST, idx);
+}
+
 } // namespace flex

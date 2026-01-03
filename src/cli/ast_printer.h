@@ -41,6 +41,24 @@ public:
     void visit(DSLBlock& n) override;
     void visit(AssignExpr& n) override;
     void visit(PropagateExpr& n) override;
+    void visit(ChanSendExpr& n) override;
+    void visit(ChanRecvExpr& n) override;
+    void visit(MakeChanExpr& n) override;
+    void visit(MakeMutexExpr& n) override;
+    void visit(MakeRWLockExpr& n) override;
+    void visit(MakeCondExpr& n) override;
+    void visit(MakeSemaphoreExpr& n) override;
+    void visit(MutexLockExpr& n) override;
+    void visit(MutexUnlockExpr& n) override;
+    void visit(RWLockReadExpr& n) override;
+    void visit(RWLockWriteExpr& n) override;
+    void visit(RWLockUnlockExpr& n) override;
+    void visit(CondWaitExpr& n) override;
+    void visit(CondSignalExpr& n) override;
+    void visit(CondBroadcastExpr& n) override;
+    void visit(SemAcquireExpr& n) override;
+    void visit(SemReleaseExpr& n) override;
+    void visit(SemTryAcquireExpr& n) override;
     void visit(ExprStmt& n) override;
     void visit(VarDecl& n) override;
     void visit(DestructuringDecl& n) override;
@@ -56,6 +74,7 @@ public:
     void visit(TryStmt& n) override;
     void visit(FnDecl& n) override;
     void visit(RecordDecl& n) override;
+    void visit(UnionDecl& n) override;
     void visit(EnumDecl& n) override;
     void visit(TypeAlias& n) override;
     void visit(TraitDecl& n) override;
@@ -69,6 +88,8 @@ public:
     void visit(UseStmt& n) override;
     void visit(ModuleDecl& n) override;
     void visit(DeleteStmt& n) override;
+    void visit(LockStmt& n) override;
+    void visit(AsmStmt& n) override;
     void visit(Program& n) override;
 };
 

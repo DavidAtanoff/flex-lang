@@ -29,16 +29,45 @@ bool NativeCodeGen::compile(Program& program, const std::string& outputFile) {
     pe_.addImport("kernel32.dll", "GetLocalTime");
     pe_.addImport("kernel32.dll", "GetTickCount64");
     pe_.addImport("kernel32.dll", "GetEnvironmentVariableA");
+    pe_.addImport("kernel32.dll", "GetSystemTimeAsFileTime");
+    pe_.addImport("kernel32.dll", "SetEnvironmentVariableA");
+    pe_.addImport("kernel32.dll", "GetTempPathA");
+    pe_.addImport("kernel32.dll", "QueryPerformanceCounter");
+    pe_.addImport("kernel32.dll", "QueryPerformanceFrequency");
     // Async/threading support
     pe_.addImport("kernel32.dll", "CreateThread");
     pe_.addImport("kernel32.dll", "WaitForSingleObject");
     pe_.addImport("kernel32.dll", "GetExitCodeThread");
     pe_.addImport("kernel32.dll", "CloseHandle");
+    // Channel/synchronization support
+    pe_.addImport("kernel32.dll", "CreateMutexA");
+    pe_.addImport("kernel32.dll", "ReleaseMutex");
+    pe_.addImport("kernel32.dll", "CreateEventA");
+    pe_.addImport("kernel32.dll", "SetEvent");
+    pe_.addImport("kernel32.dll", "ResetEvent");
+    // Semaphore support
+    pe_.addImport("kernel32.dll", "CreateSemaphoreA");
+    pe_.addImport("kernel32.dll", "ReleaseSemaphore");
+    // SRWLock support (Windows Vista+)
+    pe_.addImport("kernel32.dll", "InitializeSRWLock");
+    pe_.addImport("kernel32.dll", "AcquireSRWLockExclusive");
+    pe_.addImport("kernel32.dll", "AcquireSRWLockShared");
+    pe_.addImport("kernel32.dll", "ReleaseSRWLockExclusive");
+    pe_.addImport("kernel32.dll", "ReleaseSRWLockShared");
+    // Condition variable support (Windows Vista+)
+    pe_.addImport("kernel32.dll", "InitializeConditionVariable");
+    pe_.addImport("kernel32.dll", "SleepConditionVariableSRW");
+    pe_.addImport("kernel32.dll", "WakeConditionVariable");
+    pe_.addImport("kernel32.dll", "WakeAllConditionVariable");
     // File I/O support
     pe_.addImport("kernel32.dll", "CreateFileA");
     pe_.addImport("kernel32.dll", "ReadFile");
     pe_.addImport("kernel32.dll", "WriteFile");
     pe_.addImport("kernel32.dll", "GetFileSize");
+    // Shell/system support
+    pe_.addImport("shell32.dll", "SHGetFolderPathA");
+    // User info support
+    pe_.addImport("advapi32.dll", "GetUserNameA");
     
     pe_.finalizeImports();
     
@@ -62,12 +91,78 @@ bool NativeCodeGen::compile(Program& program, const std::string& outputFile) {
         gcCollectLabel_ = "__flex_gc_collect";
     }
     
-    // First pass: identify mutable variables (they should not be treated as constants)
+    // First pass: scan for record declarations to populate recordTypes_
+    for (auto& stmt : program.statements) {
+        if (auto* rec = dynamic_cast<RecordDecl*>(stmt.get())) {
+            RecordTypeInfo info;
+            info.name = rec->name;
+            info.reprC = rec->reprC;
+            info.reprPacked = rec->reprPacked;
+            info.reprAlign = rec->reprAlign;
+            info.isUnion = false;
+            info.hasBitfields = false;
+            
+            for (size_t i = 0; i < rec->fields.size(); i++) {
+                const auto& [fieldName, fieldType] = rec->fields[i];
+                info.fieldNames.push_back(fieldName);
+                info.fieldTypes.push_back(fieldType);
+                
+                // Handle bitfield specification
+                int bitWidth = 0;
+                if (i < rec->bitfields.size() && rec->bitfields[i].isBitfield()) {
+                    bitWidth = rec->bitfields[i].bitWidth;
+                    info.hasBitfields = true;
+                }
+                info.fieldBitWidths.push_back(bitWidth);
+                info.fieldBitOffsets.push_back(0);
+            }
+            recordTypes_[rec->name] = info;
+        }
+        // Also handle unions
+        if (auto* uni = dynamic_cast<UnionDecl*>(stmt.get())) {
+            RecordTypeInfo info;
+            info.name = uni->name;
+            info.reprC = uni->reprC;
+            info.reprPacked = false;
+            info.reprAlign = uni->reprAlign;
+            info.isUnion = true;
+            
+            for (auto& [fieldName, fieldType] : uni->fields) {
+                info.fieldNames.push_back(fieldName);
+                info.fieldTypes.push_back(fieldType);
+            }
+            recordTypes_[uni->name] = info;
+        }
+    }
+    
+    // Second pass: identify mutable variables (they should not be treated as constants)
     std::set<std::string> mutableVars;
     for (auto& stmt : program.statements) {
         if (auto* varDecl = dynamic_cast<VarDecl*>(stmt.get())) {
             if (varDecl->isMutable) {
                 mutableVars.insert(varDecl->name);
+            }
+            // Track record types from type annotations
+            if (!varDecl->typeName.empty() && recordTypes_.find(varDecl->typeName) != recordTypes_.end()) {
+                varRecordTypes_[varDecl->name] = varDecl->typeName;
+            }
+        }
+        // Also scan function bodies for record type declarations
+        if (auto* fn = dynamic_cast<FnDecl*>(stmt.get())) {
+            if (fn->body) {
+                if (auto* block = dynamic_cast<Block*>(fn->body.get())) {
+                    for (auto& bodyStmt : block->statements) {
+                        if (auto* varDecl = dynamic_cast<VarDecl*>(bodyStmt.get())) {
+                            if (varDecl->isMutable) {
+                                mutableVars.insert(varDecl->name);
+                            }
+                            // Track record types from type annotations
+                            if (!varDecl->typeName.empty() && recordTypes_.find(varDecl->typeName) != recordTypes_.end()) {
+                                varRecordTypes_[varDecl->name] = varDecl->typeName;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -80,6 +175,9 @@ bool NativeCodeGen::compile(Program& program, const std::string& outputFile) {
             }
         }
     }
+    
+    // Collect callback functions that need trampolines for C interop
+    collectCallbackFunctions(program);
     
     // Collect generic instantiations BEFORE the pre-scan for float variables
     // This ensures monomorphizer has recorded all instantiations so isFloatExpression

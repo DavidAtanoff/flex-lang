@@ -18,6 +18,7 @@ std::string Type::toString() const {
         case TypeKind::GENERIC: return "<generic>";
         case TypeKind::TRAIT: return "<trait>";
         case TypeKind::TRAIT_OBJECT: return "<dyn>";
+        case TypeKind::FIXED_ARRAY: return "<fixed_array>";
         default: return "<type>";
     }
 }
@@ -256,6 +257,111 @@ TypePtr GenericType::clone() const {
     return g;
 }
 
+// FixedArrayType implementation
+std::string FixedArrayType::toString() const {
+    return "[" + element->toString() + "; " + std::to_string(size) + "]";
+}
+bool FixedArrayType::equals(const Type* other) const {
+    if (auto* fa = dynamic_cast<const FixedArrayType*>(other)) {
+        return size == fa->size && element->equals(fa->element.get());
+    }
+    return false;
+}
+TypePtr FixedArrayType::clone() const {
+    return std::make_shared<FixedArrayType>(element->clone(), size);
+}
+size_t FixedArrayType::elementSize() const {
+    if (auto* nested = dynamic_cast<FixedArrayType*>(element.get())) {
+        return nested->totalSize();
+    }
+    return element->size();
+}
+size_t FixedArrayType::totalSize() const {
+    return elementSize() * size;
+}
+size_t FixedArrayType::dimensions() const {
+    if (auto* nested = dynamic_cast<FixedArrayType*>(element.get())) {
+        return 1 + nested->dimensions();
+    }
+    return 1;
+}
+std::vector<size_t> FixedArrayType::shape() const {
+    std::vector<size_t> result;
+    result.push_back(size);
+    if (auto* nested = dynamic_cast<FixedArrayType*>(element.get())) {
+        auto nestedShape = nested->shape();
+        result.insert(result.end(), nestedShape.begin(), nestedShape.end());
+    }
+    return result;
+}
+
+// ChannelType implementation
+std::string ChannelType::toString() const {
+    if (bufferSize > 0) {
+        return "chan[" + element->toString() + ", " + std::to_string(bufferSize) + "]";
+    }
+    return "chan[" + element->toString() + "]";
+}
+bool ChannelType::equals(const Type* other) const {
+    if (auto* ch = dynamic_cast<const ChannelType*>(other)) {
+        return bufferSize == ch->bufferSize && element->equals(ch->element.get());
+    }
+    return false;
+}
+TypePtr ChannelType::clone() const {
+    return std::make_shared<ChannelType>(element->clone(), bufferSize);
+}
+
+// MutexType implementation
+std::string MutexType::toString() const {
+    return "Mutex[" + element->toString() + "]";
+}
+bool MutexType::equals(const Type* other) const {
+    if (auto* m = dynamic_cast<const MutexType*>(other)) {
+        return element->equals(m->element.get());
+    }
+    return false;
+}
+TypePtr MutexType::clone() const {
+    return std::make_shared<MutexType>(element->clone());
+}
+
+// RWLockType implementation
+std::string RWLockType::toString() const {
+    return "RWLock[" + element->toString() + "]";
+}
+bool RWLockType::equals(const Type* other) const {
+    if (auto* r = dynamic_cast<const RWLockType*>(other)) {
+        return element->equals(r->element.get());
+    }
+    return false;
+}
+TypePtr RWLockType::clone() const {
+    return std::make_shared<RWLockType>(element->clone());
+}
+
+// CondType implementation
+std::string CondType::toString() const {
+    return "Cond";
+}
+bool CondType::equals(const Type* other) const {
+    return dynamic_cast<const CondType*>(other) != nullptr;
+}
+TypePtr CondType::clone() const {
+    return std::make_shared<CondType>();
+}
+
+// SemaphoreType implementation
+std::string SemaphoreType::toString() const {
+    return "Semaphore";
+}
+bool SemaphoreType::equals(const Type* other) const {
+    return dynamic_cast<const SemaphoreType*>(other) != nullptr;
+}
+TypePtr SemaphoreType::clone() const {
+    return std::make_shared<SemaphoreType>();
+}
+
 
 TypeRegistry& TypeRegistry::instance() { static TypeRegistry reg; return reg; }
 
@@ -351,17 +457,166 @@ TypePtr TypeRegistry::fromString(const std::string& str) {
         return refType(pointee);
     }
     
-    // Handle list types: [T]
+    // Handle channel types: chan[T] or chan[T, N]
+    if (str.size() > 5 && str.substr(0, 5) == "chan[" && str.back() == ']') {
+        std::string inner = str.substr(5, str.size() - 6);
+        
+        // Check for buffered channel syntax: chan[T, N]
+        int bracketDepth = 0;
+        size_t commaPos = std::string::npos;
+        for (size_t i = 0; i < inner.size(); i++) {
+            if (inner[i] == '[') bracketDepth++;
+            else if (inner[i] == ']') bracketDepth--;
+            else if (inner[i] == ',' && bracketDepth == 0) {
+                commaPos = i;
+                break;
+            }
+        }
+        
+        if (commaPos != std::string::npos) {
+            // Buffered channel: chan[T, N]
+            std::string elemStr = inner.substr(0, commaPos);
+            std::string sizeStr = inner.substr(commaPos + 1);
+            // Trim whitespace
+            while (!sizeStr.empty() && (sizeStr[0] == ' ' || sizeStr[0] == '\t')) sizeStr = sizeStr.substr(1);
+            while (!sizeStr.empty() && (sizeStr.back() == ' ' || sizeStr.back() == '\t')) sizeStr.pop_back();
+            
+            TypePtr elem = fromString(elemStr);
+            size_t bufSize = std::stoull(sizeStr);
+            return channelType(elem, bufSize);
+        }
+        
+        // Unbuffered channel: chan[T]
+        TypePtr elem = fromString(inner);
+        return channelType(elem, 0);
+    }
+    
+    // Handle Mutex types: Mutex[T]
+    if (str.size() > 6 && str.substr(0, 6) == "Mutex[" && str.back() == ']') {
+        std::string inner = str.substr(6, str.size() - 7);
+        TypePtr elem = fromString(inner);
+        return mutexType(elem);
+    }
+    
+    // Handle RWLock types: RWLock[T]
+    if (str.size() > 7 && str.substr(0, 7) == "RWLock[" && str.back() == ']') {
+        std::string inner = str.substr(7, str.size() - 8);
+        TypePtr elem = fromString(inner);
+        return rwlockType(elem);
+    }
+    
+    // Handle Cond type
+    if (str == "Cond") {
+        return condType();
+    }
+    
+    // Handle Semaphore type
+    if (str == "Semaphore") {
+        return semaphoreType();
+    }
+    
+    // Handle list types: [T] or fixed-size arrays: [T; N]
     if (str.size() > 2 && str[0] == '[' && str.back() == ']') {
-        std::string elemStr = str.substr(1, str.size() - 2);
-        TypePtr elem = fromString(elemStr);
+        std::string inner = str.substr(1, str.size() - 2);
+        
+        // Check for fixed-size array syntax: [T; N]
+        // Need to find the semicolon that's not inside nested brackets
+        int bracketDepth = 0;
+        size_t semicolonPos = std::string::npos;
+        for (size_t i = 0; i < inner.size(); i++) {
+            if (inner[i] == '[') bracketDepth++;
+            else if (inner[i] == ']') bracketDepth--;
+            else if (inner[i] == ';' && bracketDepth == 0) {
+                semicolonPos = i;
+                break;
+            }
+        }
+        
+        if (semicolonPos != std::string::npos) {
+            // Fixed-size array: [T; N]
+            std::string elemStr = inner.substr(0, semicolonPos);
+            std::string sizeStr = inner.substr(semicolonPos + 1);
+            // Trim whitespace from sizeStr
+            while (!sizeStr.empty() && (sizeStr[0] == ' ' || sizeStr[0] == '\t')) sizeStr = sizeStr.substr(1);
+            while (!sizeStr.empty() && (sizeStr.back() == ' ' || sizeStr.back() == '\t')) sizeStr.pop_back();
+            
+            TypePtr elem = fromString(elemStr);
+            size_t arraySize = std::stoull(sizeStr);
+            return fixedArrayType(elem, arraySize);
+        }
+        
+        // Regular list type: [T]
+        TypePtr elem = fromString(inner);
         return listType(elem);
     }
     
-    // Handle function pointer types: fn(...) -> T
+    // Handle function pointer types: fn(...) -> T or fn(int, int) -> int
     if (str.size() > 2 && str.substr(0, 2) == "fn") {
-        // For now, return a generic function type
-        return functionType();
+        auto fnType = std::make_shared<FunctionType>();
+        
+        // Find the opening parenthesis
+        size_t parenStart = str.find('(');
+        if (parenStart == std::string::npos) {
+            return fnType;  // Just "fn" without params
+        }
+        
+        // Find matching closing parenthesis
+        int depth = 1;
+        size_t parenEnd = parenStart + 1;
+        while (parenEnd < str.size() && depth > 0) {
+            if (str[parenEnd] == '(') depth++;
+            else if (str[parenEnd] == ')') depth--;
+            parenEnd++;
+        }
+        parenEnd--;  // Point to the closing paren
+        
+        // Parse parameter types
+        std::string paramsStr = str.substr(parenStart + 1, parenEnd - parenStart - 1);
+        if (!paramsStr.empty() && paramsStr != "...") {
+            // Split by comma, respecting nested brackets
+            size_t start = 0;
+            int bracketDepth = 0;
+            int parenDepth = 0;
+            for (size_t i = 0; i <= paramsStr.size(); i++) {
+                if (i == paramsStr.size() || (paramsStr[i] == ',' && bracketDepth == 0 && parenDepth == 0)) {
+                    std::string paramStr = paramsStr.substr(start, i - start);
+                    // Trim whitespace
+                    while (!paramStr.empty() && (paramStr[0] == ' ' || paramStr[0] == '\t')) paramStr = paramStr.substr(1);
+                    while (!paramStr.empty() && (paramStr.back() == ' ' || paramStr.back() == '\t')) paramStr.pop_back();
+                    
+                    if (!paramStr.empty() && paramStr != "...") {
+                        TypePtr paramType = fromString(paramStr);
+                        fnType->params.push_back({"", paramType});
+                    }
+                    if (paramStr == "...") {
+                        fnType->isVariadic = true;
+                    }
+                    start = i + 1;
+                } else if (paramsStr[i] == '[') {
+                    bracketDepth++;
+                } else if (paramsStr[i] == ']') {
+                    bracketDepth--;
+                } else if (paramsStr[i] == '(') {
+                    parenDepth++;
+                } else if (paramsStr[i] == ')') {
+                    parenDepth--;
+                }
+            }
+        }
+        
+        // Check for return type: -> T
+        size_t arrowPos = str.find("->", parenEnd);
+        if (arrowPos != std::string::npos) {
+            std::string retStr = str.substr(arrowPos + 2);
+            // Trim whitespace
+            while (!retStr.empty() && (retStr[0] == ' ' || retStr[0] == '\t')) retStr = retStr.substr(1);
+            while (!retStr.empty() && (retStr.back() == ' ' || retStr.back() == '\t')) retStr.pop_back();
+            fnType->returnType = fromString(retStr);
+        } else {
+            fnType->returnType = void_;
+        }
+        
+        return fnType;
     }
     
     // Handle nullable types: T?
@@ -398,6 +653,30 @@ TraitPtr TypeRegistry::traitType(const std::string& name) {
 TypePtr TypeRegistry::traitObjectType(const std::string& traitName) {
     TraitPtr trait = lookupTrait(traitName);
     return std::make_shared<TraitObjectType>(traitName, trait);
+}
+
+TypePtr TypeRegistry::fixedArrayType(TypePtr element, size_t size) {
+    return std::make_shared<FixedArrayType>(std::move(element), size);
+}
+
+TypePtr TypeRegistry::channelType(TypePtr element, size_t bufferSize) {
+    return std::make_shared<ChannelType>(std::move(element), bufferSize);
+}
+
+TypePtr TypeRegistry::mutexType(TypePtr element) {
+    return std::make_shared<MutexType>(std::move(element));
+}
+
+TypePtr TypeRegistry::rwlockType(TypePtr element) {
+    return std::make_shared<RWLockType>(std::move(element));
+}
+
+TypePtr TypeRegistry::condType() {
+    return std::make_shared<CondType>();
+}
+
+TypePtr TypeRegistry::semaphoreType() {
+    return std::make_shared<SemaphoreType>();
 }
 
 void TypeRegistry::registerTrait(const std::string& name, TraitPtr trait) {

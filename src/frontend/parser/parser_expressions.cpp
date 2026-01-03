@@ -16,6 +16,7 @@ static Parser::Precedence getInfixPrecedence(TokenType type) {
         case TokenType::MINUS_ASSIGN:
         case TokenType::STAR_ASSIGN:
         case TokenType::SLASH_ASSIGN: return Parser::Precedence::ASSIGNMENT;
+        case TokenType::CHAN_SEND: return Parser::Precedence::ASSIGNMENT;  // ch <- value has low precedence
         case TokenType::QUESTION_QUESTION: return Parser::Precedence::NULL_COALESCE;
         case TokenType::OR:
         case TokenType::PIPE_PIPE: return Parser::Precedence::OR;
@@ -42,7 +43,8 @@ static Parser::Precedence getInfixPrecedence(TokenType type) {
         case TokenType::QUESTION: return Parser::Precedence::TERNARY;
         case TokenType::DOT:
         case TokenType::LBRACKET:
-        case TokenType::LPAREN: return Parser::Precedence::POSTFIX;
+        case TokenType::LPAREN:
+        case TokenType::LBRACE: return Parser::Precedence::POSTFIX;
         default: return Parser::Precedence::NONE;
     }
 }
@@ -127,6 +129,12 @@ ExprPtr Parser::parsePrefix() {
     if (match(TokenType::SPAWN)) {
         auto operand = parsePrecedence(Precedence::UNARY);
         return std::make_unique<SpawnExpr>(std::move(operand), loc);
+    }
+    
+    // Channel receive: <- ch
+    if (match(TokenType::CHAN_SEND)) {
+        auto channel = parsePrecedence(Precedence::UNARY);
+        return std::make_unique<ChanRecvExpr>(std::move(channel), loc);
     }
     
     // New expression
@@ -214,6 +222,33 @@ ExprPtr Parser::parseInfix(ExprPtr left, Precedence prec) {
     if (op == TokenType::LPAREN) {
         return parseCall(std::move(left), loc);
     }
+    if (op == TokenType::LBRACE) {
+        // Record construction with type name: Point{x: 10, y: 20}
+        if (auto* id = dynamic_cast<Identifier*>(left.get())) {
+            auto rec = std::make_unique<RecordExpr>(loc);
+            rec->typeName = id->name;
+            
+            skipNewlines();
+            if (!check(TokenType::RBRACE)) {
+                do {
+                    skipNewlines();
+                    if (check(TokenType::RBRACE)) break;
+                    
+                    auto name = consume(TokenType::IDENTIFIER, "Expected field name").lexeme;
+                    consume(TokenType::COLON, "Expected ':' after field name");
+                    auto value = expression();
+                    rec->fields.emplace_back(name, std::move(value));
+                } while (match(TokenType::COMMA));
+            }
+            
+            skipNewlines();
+            consume(TokenType::RBRACE, "Expected '}' after record fields");
+            return rec;
+        }
+        // Not an identifier - treat as error or anonymous record
+        auto diag = errors::unexpectedToken(previous().lexeme, previous().location);
+        throw FlexDiagnosticError(diag);
+    }
     
     // Standard Ternary: condition ? then : else
     // OR Postfix error propagation: expr?
@@ -251,6 +286,12 @@ ExprPtr Parser::parseInfix(ExprPtr left, Precedence prec) {
         op == TokenType::STAR_ASSIGN || op == TokenType::SLASH_ASSIGN) {
         auto right = parsePrecedence(Precedence::ASSIGNMENT);
         return std::make_unique<AssignExpr>(std::move(left), op, std::move(right), loc);
+    }
+    
+    // Channel send: ch <- value
+    if (op == TokenType::CHAN_SEND) {
+        auto value = parsePrecedence(Precedence::ASSIGNMENT);
+        return std::make_unique<ChanSendExpr>(std::move(left), std::move(value), loc);
     }
     
     // Pipe operator (special: transforms into function call)
@@ -440,6 +481,57 @@ ExprPtr Parser::parseNew(SourceLocation loc) {
 // Primary expressions (literals, identifiers, grouping)
 ExprPtr Parser::primary() {
     auto loc = peek().location;
+    
+    // Channel creation: chan[T] or chan[T, N]
+    if (match(TokenType::CHAN)) {
+        consume(TokenType::LBRACKET, "Expected '[' after chan");
+        std::string elemType = parseType();
+        int64_t bufSize = 0;
+        if (match(TokenType::COMMA)) {
+            auto sizeTok = consume(TokenType::INTEGER, "Expected buffer size");
+            bufSize = std::get<int64_t>(sizeTok.literal);
+        }
+        consume(TokenType::RBRACKET, "Expected ']' after channel type");
+        return std::make_unique<MakeChanExpr>(elemType, bufSize, loc);
+    }
+    
+    // Mutex creation: Mutex[T]
+    if (match(TokenType::MUTEX)) {
+        consume(TokenType::LBRACKET, "Expected '[' after Mutex");
+        std::string elemType = parseType();
+        consume(TokenType::RBRACKET, "Expected ']' after Mutex type");
+        return std::make_unique<MakeMutexExpr>(elemType, loc);
+    }
+    
+    // RWLock creation: RWLock[T]
+    if (match(TokenType::RWLOCK)) {
+        consume(TokenType::LBRACKET, "Expected '[' after RWLock");
+        std::string elemType = parseType();
+        consume(TokenType::RBRACKET, "Expected ']' after RWLock type");
+        return std::make_unique<MakeRWLockExpr>(elemType, loc);
+    }
+    
+    // Cond creation: Cond or Cond()
+    if (match(TokenType::COND)) {
+        if (match(TokenType::LPAREN)) {
+            consume(TokenType::RPAREN, "Expected ')' after Cond");
+        }
+        return std::make_unique<MakeCondExpr>(loc);
+    }
+    
+    // Semaphore creation: Semaphore(initial, max)
+    if (match(TokenType::SEMAPHORE)) {
+        consume(TokenType::LPAREN, "Expected '(' after Semaphore");
+        auto initTok = consume(TokenType::INTEGER, "Expected initial count");
+        int64_t initialCount = std::get<int64_t>(initTok.literal);
+        int64_t maxCount = initialCount;  // Default max = initial
+        if (match(TokenType::COMMA)) {
+            auto maxTok = consume(TokenType::INTEGER, "Expected max count");
+            maxCount = std::get<int64_t>(maxTok.literal);
+        }
+        consume(TokenType::RPAREN, "Expected ')' after Semaphore arguments");
+        return std::make_unique<MakeSemaphoreExpr>(initialCount, maxCount, loc);
+    }
     
     // Integer literal
     if (match(TokenType::INTEGER)) {

@@ -15,6 +15,7 @@ StmtPtr Parser::statement() {
     if (match(TokenType::BREAK)) return breakStatement();
     if (match(TokenType::CONTINUE)) return continueStatement();
     if (match(TokenType::DELETE)) return deleteStatement();
+    if (match(TokenType::LOCK)) return lockStatement();
     
     return expressionStatement();
 }
@@ -226,6 +227,15 @@ StmtPtr Parser::deleteStatement() {
     auto expr = expression();
     match(TokenType::NEWLINE);
     return std::make_unique<DeleteStmt>(std::move(expr), loc);
+}
+
+StmtPtr Parser::lockStatement() {
+    auto loc = previous().location;
+    auto mutex = expression();
+    consume(TokenType::COLON, "Expected ':' after lock expression");
+    match(TokenType::NEWLINE);
+    auto body = block();
+    return std::make_unique<LockStmt>(std::move(mutex), std::move(body), loc);
 }
 
 } // namespace flex

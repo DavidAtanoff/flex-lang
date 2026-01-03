@@ -81,6 +81,35 @@ void TypeChecker::visit(RecordDecl& node) {
     currentTypeParamNames_ = savedTypeParamNames;
 }
 
+void TypeChecker::visit(UnionDecl& node) {
+    auto& reg = TypeRegistry::instance();
+    // Unions use RecordType internally but with different memory layout
+    auto unionType = std::make_shared<RecordType>(node.name);
+    
+    // Handle generic type parameters
+    std::vector<std::string> savedTypeParamNames = currentTypeParamNames_;
+    for (const auto& tp : node.typeParams) {
+        currentTypeParamNames_.push_back(tp);
+        auto tpType = std::make_shared<TypeParamType>(tp);
+        currentTypeParams_[tp] = tpType;
+    }
+    
+    for (auto& f : node.fields) {
+        TypePtr fieldType = parseTypeAnnotation(f.second);
+        unionType->fields.push_back({f.first, fieldType, false});
+    }
+    
+    symbols_.registerType(node.name, unionType);
+    Symbol typeSym(node.name, SymbolKind::TYPE, unionType);
+    symbols_.define(typeSym);
+    
+    // Restore type parameter scope
+    for (const auto& tp : node.typeParams) {
+        currentTypeParams_.erase(tp);
+    }
+    currentTypeParamNames_ = savedTypeParamNames;
+}
+
 void TypeChecker::visit(EnumDecl& node) {
     auto& reg = TypeRegistry::instance();
     auto enumType = std::make_shared<Type>(TypeKind::INT);
@@ -96,7 +125,13 @@ void TypeChecker::visit(EnumDecl& node) {
 }
 
 void TypeChecker::visit(TypeAlias& node) {
-    TypePtr targetType = parseTypeAnnotation(node.targetType);
+    TypePtr targetType;
+    if (node.targetType == "opaque") {
+        // Opaque types are treated as void* for FFI purposes
+        targetType = TypeRegistry::instance().ptrType(TypeRegistry::instance().voidType(), true);
+    } else {
+        targetType = parseTypeAnnotation(node.targetType);
+    }
     symbols_.registerType(node.name, targetType);
 }
 

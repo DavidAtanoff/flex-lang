@@ -129,6 +129,27 @@ void TypeChecker::visit(DeleteStmt& node) {
     inferType(node.expr.get());
 }
 
+void TypeChecker::visit(LockStmt& node) {
+    // Type check the mutex expression
+    TypePtr mutexType = inferType(node.mutex.get());
+    
+    // Verify it's a mutex type
+    if (mutexType->kind != TypeKind::MUTEX) {
+        error("lock statement requires a Mutex type, got '" + mutexType->toString() + "'", node.location);
+    }
+    
+    // Type check the body
+    node.body->accept(*this);
+}
+
+void TypeChecker::visit(AsmStmt& node) {
+    // Inline assembly requires unsafe block
+    if (!symbols_.inUnsafe()) {
+        error("Inline assembly requires unsafe block", node.location);
+    }
+    // No type checking needed for assembly code itself
+}
+
 void TypeChecker::visit(DestructuringDecl& node) {
     auto& reg = TypeRegistry::instance();
     TypePtr initType = inferType(node.initializer.get());

@@ -15,8 +15,7 @@ using ModuleRegisterFn = std::function<void(std::unordered_map<std::string, Valu
 // Register all standard library modules
 void registerAll(std::unordered_map<std::string, Value>& globals);
 
-// Individual module registration
-void registerIO(std::unordered_map<std::string, Value>& globals);
+// Individual module registration (IO is now in native codegen)
 void registerString(std::unordered_map<std::string, Value>& globals);
 void registerMath(std::unordered_map<std::string, Value>& globals);
 void registerList(std::unordered_map<std::string, Value>& globals);

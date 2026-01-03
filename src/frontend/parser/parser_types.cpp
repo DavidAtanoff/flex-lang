@@ -9,8 +9,15 @@ std::string Parser::parseType() {
     std::string type;
     
     // C-style pointer: *int, *str, **int (pointer to pointer)
+    // Also handles function pointer: *fn(int, int) -> int
     if (match(TokenType::STAR)) {
-        type = "*" + parseType();
+        // Check if this is a function pointer type: *fn(...)
+        if (check(TokenType::FN)) {
+            // Parse the function type and wrap it as a pointer
+            type = "*" + parseType();  // parseType will handle fn(...)
+        } else {
+            type = "*" + parseType();
+        }
     }
     // Reference type: &T, &mut T
     else if (match(TokenType::AMP)) {
@@ -29,10 +36,57 @@ std::string Parser::parseType() {
         type = "ref<" + parseType() + ">";
         consume(TokenType::GT, "Expected '>' after ref type");
     }
-    // List type: [T]
+    // Channel type: chan[T] or chan[T, N] for buffered
+    else if (match(TokenType::CHAN)) {
+        consume(TokenType::LBRACKET, "Expected '[' after chan");
+        std::string elemType = parseType();
+        type = "chan[" + elemType;
+        // Check for buffer size: chan[T, N]
+        if (match(TokenType::COMMA)) {
+            auto sizeTok = consume(TokenType::INTEGER, "Expected buffer size");
+            int64_t bufSize = std::get<int64_t>(sizeTok.literal);
+            type += ", " + std::to_string(bufSize);
+        }
+        type += "]";
+        consume(TokenType::RBRACKET, "Expected ']' after channel type");
+    }
+    // Mutex type: Mutex[T]
+    else if (match(TokenType::MUTEX)) {
+        consume(TokenType::LBRACKET, "Expected '[' after Mutex");
+        std::string elemType = parseType();
+        type = "Mutex[" + elemType + "]";
+        consume(TokenType::RBRACKET, "Expected ']' after Mutex type");
+    }
+    // RWLock type: RWLock[T]
+    else if (match(TokenType::RWLOCK)) {
+        consume(TokenType::LBRACKET, "Expected '[' after RWLock");
+        std::string elemType = parseType();
+        type = "RWLock[" + elemType + "]";
+        consume(TokenType::RBRACKET, "Expected ']' after RWLock type");
+    }
+    // Cond type: Cond
+    else if (match(TokenType::COND)) {
+        type = "Cond";
+    }
+    // Semaphore type: Semaphore
+    else if (match(TokenType::SEMAPHORE)) {
+        type = "Semaphore";
+    }
+    // List type: [T] or fixed-size array: [T; N]
     else if (match(TokenType::LBRACKET)) {
-        type = "[" + parseType() + "]";
-        consume(TokenType::RBRACKET, "Expected ']' after list type");
+        std::string elemType = parseType();
+        
+        // Check for fixed-size array syntax: [T; N]
+        if (match(TokenType::SEMICOLON)) {
+            // Parse the size
+            auto sizeTok = consume(TokenType::INTEGER, "Expected array size");
+            int64_t size = std::get<int64_t>(sizeTok.literal);
+            type = "[" + elemType + "; " + std::to_string(size) + "]";
+        } else {
+            // Regular list type: [T]
+            type = "[" + elemType + "]";
+        }
+        consume(TokenType::RBRACKET, "Expected ']' after array/list type");
     }
     // Function pointer: fn(int, int) -> int
     else if (match(TokenType::FN)) {
@@ -89,7 +143,8 @@ std::vector<std::pair<std::string, std::string>> Parser::parseParams() {
         
         if (match(TokenType::COLON)) {
             if (check(TokenType::IDENTIFIER) || check(TokenType::PTR) || 
-                check(TokenType::REF) || check(TokenType::LBRACKET)) {
+                check(TokenType::REF) || check(TokenType::LBRACKET) ||
+                check(TokenType::STAR) || check(TokenType::FN)) {
                 type = parseType();
             } else {
                 current--;

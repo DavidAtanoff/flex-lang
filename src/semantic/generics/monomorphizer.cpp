@@ -450,6 +450,24 @@ void GenericCollector::visit(SpawnExpr& node) {
 void GenericCollector::visit(AssignExpr& node) {
     node.target->accept(*this);
     node.value->accept(*this);
+    
+    // Track variable type for inference (handles "pi = 3.14" style assignments)
+    if (auto* id = dynamic_cast<Identifier*>(node.target.get())) {
+        auto& reg = TypeRegistry::instance();
+        TypePtr varType = reg.anyType();
+        
+        if (dynamic_cast<IntegerLiteral*>(node.value.get())) {
+            varType = reg.intType();
+        } else if (dynamic_cast<FloatLiteral*>(node.value.get())) {
+            varType = reg.floatType();
+        } else if (dynamic_cast<StringLiteral*>(node.value.get())) {
+            varType = reg.stringType();
+        } else if (dynamic_cast<BoolLiteral*>(node.value.get())) {
+            varType = reg.boolType();
+        }
+        
+        currentTypeBindings_[id->name] = varType;
+    }
 }
 
 void GenericCollector::visit(PropagateExpr& node) {

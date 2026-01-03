@@ -58,6 +58,7 @@ private:
     StmtPtr fnDeclaration();
     StmtPtr externFnDeclaration();
     StmtPtr recordDeclaration();
+    StmtPtr unionDeclaration();
     StmtPtr enumDeclaration();
     StmtPtr typeAliasDeclaration();
     StmtPtr traitDeclaration();
@@ -70,6 +71,7 @@ private:
     StmtPtr layerDeclaration();
     StmtPtr moduleDeclaration();
     StmtPtr unsafeBlock();
+    StmtPtr asmStatement();
     StmtPtr varDeclaration();
     
     // Statement parsing (parser_statements.cpp)
@@ -83,6 +85,7 @@ private:
     StmtPtr breakStatement();
     StmtPtr continueStatement();
     StmtPtr deleteStatement();
+    StmtPtr lockStatement();
     StmtPtr block();
     
     // Pratt parser expression parsing (parser_expressions.cpp)

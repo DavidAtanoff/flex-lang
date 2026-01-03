@@ -194,6 +194,58 @@ void TypeChecker::registerBuiltins() {
     symbols_.define(Symbol("minute", SymbolKind::FUNCTION, std::make_shared<FunctionType>(*timeFn)));
     symbols_.define(Symbol("second", SymbolKind::FUNCTION, std::make_shared<FunctionType>(*timeFn)));
     
+    // ===== Basic Math Builtins =====
+    // abs(x) -> int
+    auto absFn = std::make_shared<FunctionType>();
+    absFn->params.push_back({"x", reg.intType()});
+    absFn->returnType = reg.intType();
+    symbols_.define(Symbol("abs", SymbolKind::FUNCTION, absFn));
+    
+    // min(a, b) -> int
+    auto minFn = std::make_shared<FunctionType>();
+    minFn->params.push_back({"a", reg.intType()});
+    minFn->params.push_back({"b", reg.intType()});
+    minFn->returnType = reg.intType();
+    symbols_.define(Symbol("min", SymbolKind::FUNCTION, minFn));
+    
+    // max(a, b) -> int
+    auto maxFn = std::make_shared<FunctionType>();
+    maxFn->params.push_back({"a", reg.intType()});
+    maxFn->params.push_back({"b", reg.intType()});
+    maxFn->returnType = reg.intType();
+    symbols_.define(Symbol("max", SymbolKind::FUNCTION, maxFn));
+    
+    // sqrt(x) -> float
+    auto sqrtFn = std::make_shared<FunctionType>();
+    sqrtFn->params.push_back({"x", reg.floatType()});
+    sqrtFn->returnType = reg.floatType();
+    symbols_.define(Symbol("sqrt", SymbolKind::FUNCTION, sqrtFn));
+    
+    // floor(x) -> int
+    auto floorFn = std::make_shared<FunctionType>();
+    floorFn->params.push_back({"x", reg.floatType()});
+    floorFn->returnType = reg.intType();
+    symbols_.define(Symbol("floor", SymbolKind::FUNCTION, floorFn));
+    
+    // ceil(x) -> int
+    auto ceilFn = std::make_shared<FunctionType>();
+    ceilFn->params.push_back({"x", reg.floatType()});
+    ceilFn->returnType = reg.intType();
+    symbols_.define(Symbol("ceil", SymbolKind::FUNCTION, ceilFn));
+    
+    // round(x) -> int
+    auto roundFn = std::make_shared<FunctionType>();
+    roundFn->params.push_back({"x", reg.floatType()});
+    roundFn->returnType = reg.intType();
+    symbols_.define(Symbol("round", SymbolKind::FUNCTION, roundFn));
+    
+    // pow(base, exp) -> float
+    auto powFn = std::make_shared<FunctionType>();
+    powFn->params.push_back({"base", reg.floatType()});
+    powFn->params.push_back({"exp", reg.floatType()});
+    powFn->returnType = reg.floatType();
+    symbols_.define(Symbol("pow", SymbolKind::FUNCTION, powFn));
+    
     // Result type functions
     // Ok(value) -> Result (encoded as int with LSB=1)
     auto okFn = std::make_shared<FunctionType>();
@@ -390,6 +442,375 @@ void TypeChecker::registerBuiltins() {
     offsetofFn->params.push_back({"field", reg.anyType()});   // Field name
     offsetofFn->returnType = reg.intType();
     symbols_.define(Symbol("offsetof", SymbolKind::FUNCTION, offsetofFn));
+    
+    // Memory intrinsics (require unsafe block)
+    // memcpy(dst, src, n) -> ptr - Fast memory copy (non-overlapping)
+    auto memcpyFn = std::make_shared<FunctionType>();
+    memcpyFn->params.push_back({"dst", reg.intType()});   // Destination pointer
+    memcpyFn->params.push_back({"src", reg.intType()});   // Source pointer
+    memcpyFn->params.push_back({"n", reg.intType()});     // Number of bytes
+    memcpyFn->returnType = reg.intType();  // Returns dst pointer
+    symbols_.define(Symbol("memcpy", SymbolKind::FUNCTION, memcpyFn));
+    
+    // memset(ptr, val, n) -> ptr - Fast memory fill
+    auto memsetFn = std::make_shared<FunctionType>();
+    memsetFn->params.push_back({"ptr", reg.intType()});   // Destination pointer
+    memsetFn->params.push_back({"val", reg.intType()});   // Value to set (byte)
+    memsetFn->params.push_back({"n", reg.intType()});     // Number of bytes
+    memsetFn->returnType = reg.intType();  // Returns ptr
+    symbols_.define(Symbol("memset", SymbolKind::FUNCTION, memsetFn));
+    
+    // memmove(dst, src, n) -> ptr - Overlapping memory copy
+    auto memmoveFn = std::make_shared<FunctionType>();
+    memmoveFn->params.push_back({"dst", reg.intType()});  // Destination pointer
+    memmoveFn->params.push_back({"src", reg.intType()});  // Source pointer
+    memmoveFn->params.push_back({"n", reg.intType()});    // Number of bytes
+    memmoveFn->returnType = reg.intType();  // Returns dst pointer
+    symbols_.define(Symbol("memmove", SymbolKind::FUNCTION, memmoveFn));
+    
+    // memcmp(a, b, n) -> int - Memory comparison
+    auto memcmpFn = std::make_shared<FunctionType>();
+    memcmpFn->params.push_back({"a", reg.intType()});     // First pointer
+    memcmpFn->params.push_back({"b", reg.intType()});     // Second pointer
+    memcmpFn->params.push_back({"n", reg.intType()});     // Number of bytes
+    memcmpFn->returnType = reg.intType();  // Returns <0, 0, or >0
+    symbols_.define(Symbol("memcmp", SymbolKind::FUNCTION, memcmpFn));
+    
+    // ===== Extended String Builtins =====
+    // ltrim(s) -> string - Remove leading whitespace
+    auto ltrimFn = std::make_shared<FunctionType>();
+    ltrimFn->params.push_back({"s", reg.stringType()});
+    ltrimFn->returnType = reg.stringType();
+    symbols_.define(Symbol("ltrim", SymbolKind::FUNCTION, ltrimFn));
+    
+    // rtrim(s) -> string - Remove trailing whitespace
+    auto rtrimFn = std::make_shared<FunctionType>();
+    rtrimFn->params.push_back({"s", reg.stringType()});
+    rtrimFn->returnType = reg.stringType();
+    symbols_.define(Symbol("rtrim", SymbolKind::FUNCTION, rtrimFn));
+    
+    // char_at(s, index) -> string - Get character at index
+    auto charAtFn = std::make_shared<FunctionType>();
+    charAtFn->params.push_back({"s", reg.stringType()});
+    charAtFn->params.push_back({"index", reg.intType()});
+    charAtFn->returnType = reg.stringType();
+    symbols_.define(Symbol("char_at", SymbolKind::FUNCTION, charAtFn));
+    
+    // repeat(s, n) -> string - Repeat string n times
+    auto repeatFn = std::make_shared<FunctionType>();
+    repeatFn->params.push_back({"s", reg.stringType()});
+    repeatFn->params.push_back({"n", reg.intType()});
+    repeatFn->returnType = reg.stringType();
+    symbols_.define(Symbol("repeat", SymbolKind::FUNCTION, repeatFn));
+    
+    // reverse_str(s) -> string - Reverse string
+    auto reverseStrFn = std::make_shared<FunctionType>();
+    reverseStrFn->params.push_back({"s", reg.stringType()});
+    reverseStrFn->returnType = reg.stringType();
+    symbols_.define(Symbol("reverse_str", SymbolKind::FUNCTION, reverseStrFn));
+    
+    // is_digit(s) -> bool - Check if all characters are digits
+    auto isDigitFn = std::make_shared<FunctionType>();
+    isDigitFn->params.push_back({"s", reg.stringType()});
+    isDigitFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_digit", SymbolKind::FUNCTION, isDigitFn));
+    
+    // is_alpha(s) -> bool - Check if all characters are alphabetic
+    auto isAlphaFn = std::make_shared<FunctionType>();
+    isAlphaFn->params.push_back({"s", reg.stringType()});
+    isAlphaFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_alpha", SymbolKind::FUNCTION, isAlphaFn));
+    
+    // ord(s) -> int - Get ASCII code of first character
+    auto ordFn = std::make_shared<FunctionType>();
+    ordFn->params.push_back({"s", reg.stringType()});
+    ordFn->returnType = reg.intType();
+    symbols_.define(Symbol("ord", SymbolKind::FUNCTION, ordFn));
+    
+    // chr(n) -> string - Convert ASCII code to character
+    auto chrFn = std::make_shared<FunctionType>();
+    chrFn->params.push_back({"n", reg.intType()});
+    chrFn->returnType = reg.stringType();
+    symbols_.define(Symbol("chr", SymbolKind::FUNCTION, chrFn));
+    
+    // last_index_of(s, substr) -> int - Find last occurrence
+    auto lastIndexOfFn = std::make_shared<FunctionType>();
+    lastIndexOfFn->params.push_back({"s", reg.stringType()});
+    lastIndexOfFn->params.push_back({"substr", reg.stringType()});
+    lastIndexOfFn->returnType = reg.intType();
+    symbols_.define(Symbol("last_index_of", SymbolKind::FUNCTION, lastIndexOfFn));
+    
+    // ===== Extended Math Builtins =====
+    // sin(x) -> float
+    auto sinFn = std::make_shared<FunctionType>();
+    sinFn->params.push_back({"x", reg.floatType()});
+    sinFn->returnType = reg.floatType();
+    symbols_.define(Symbol("sin", SymbolKind::FUNCTION, sinFn));
+    
+    // cos(x) -> float
+    auto cosFn = std::make_shared<FunctionType>();
+    cosFn->params.push_back({"x", reg.floatType()});
+    cosFn->returnType = reg.floatType();
+    symbols_.define(Symbol("cos", SymbolKind::FUNCTION, cosFn));
+    
+    // tan(x) -> float
+    auto tanFn = std::make_shared<FunctionType>();
+    tanFn->params.push_back({"x", reg.floatType()});
+    tanFn->returnType = reg.floatType();
+    symbols_.define(Symbol("tan", SymbolKind::FUNCTION, tanFn));
+    
+    // exp(x) -> float
+    auto expFn = std::make_shared<FunctionType>();
+    expFn->params.push_back({"x", reg.floatType()});
+    expFn->returnType = reg.floatType();
+    symbols_.define(Symbol("exp", SymbolKind::FUNCTION, expFn));
+    
+    // log(x) -> float
+    auto logFn = std::make_shared<FunctionType>();
+    logFn->params.push_back({"x", reg.floatType()});
+    logFn->returnType = reg.floatType();
+    symbols_.define(Symbol("log", SymbolKind::FUNCTION, logFn));
+    
+    // trunc(x) -> int - Truncate towards zero
+    auto truncFn = std::make_shared<FunctionType>();
+    truncFn->params.push_back({"x", reg.floatType()});
+    truncFn->returnType = reg.intType();
+    symbols_.define(Symbol("trunc", SymbolKind::FUNCTION, truncFn));
+    
+    // sign(x) -> int - Return -1, 0, or 1
+    auto signFn = std::make_shared<FunctionType>();
+    signFn->params.push_back({"x", reg.intType()});
+    signFn->returnType = reg.intType();
+    symbols_.define(Symbol("sign", SymbolKind::FUNCTION, signFn));
+    
+    // clamp(x, min, max) -> int
+    auto clampFn = std::make_shared<FunctionType>();
+    clampFn->params.push_back({"x", reg.intType()});
+    clampFn->params.push_back({"min", reg.intType()});
+    clampFn->params.push_back({"max", reg.intType()});
+    clampFn->returnType = reg.intType();
+    symbols_.define(Symbol("clamp", SymbolKind::FUNCTION, clampFn));
+    
+    // lerp(a, b, t) -> float - Linear interpolation
+    auto lerpFn = std::make_shared<FunctionType>();
+    lerpFn->params.push_back({"a", reg.floatType()});
+    lerpFn->params.push_back({"b", reg.floatType()});
+    lerpFn->params.push_back({"t", reg.floatType()});
+    lerpFn->returnType = reg.floatType();
+    symbols_.define(Symbol("lerp", SymbolKind::FUNCTION, lerpFn));
+    
+    // gcd(a, b) -> int - Greatest common divisor
+    auto gcdFn = std::make_shared<FunctionType>();
+    gcdFn->params.push_back({"a", reg.intType()});
+    gcdFn->params.push_back({"b", reg.intType()});
+    gcdFn->returnType = reg.intType();
+    symbols_.define(Symbol("gcd", SymbolKind::FUNCTION, gcdFn));
+    
+    // lcm(a, b) -> int - Least common multiple
+    auto lcmFn = std::make_shared<FunctionType>();
+    lcmFn->params.push_back({"a", reg.intType()});
+    lcmFn->params.push_back({"b", reg.intType()});
+    lcmFn->returnType = reg.intType();
+    symbols_.define(Symbol("lcm", SymbolKind::FUNCTION, lcmFn));
+    
+    // factorial(n) -> int
+    auto factorialFn = std::make_shared<FunctionType>();
+    factorialFn->params.push_back({"n", reg.intType()});
+    factorialFn->returnType = reg.intType();
+    symbols_.define(Symbol("factorial", SymbolKind::FUNCTION, factorialFn));
+    
+    // fib(n) -> int - Fibonacci number
+    auto fibFn = std::make_shared<FunctionType>();
+    fibFn->params.push_back({"n", reg.intType()});
+    fibFn->returnType = reg.intType();
+    symbols_.define(Symbol("fib", SymbolKind::FUNCTION, fibFn));
+    
+    // random() -> int - Random number
+    auto randomFn = std::make_shared<FunctionType>();
+    randomFn->returnType = reg.intType();
+    symbols_.define(Symbol("random", SymbolKind::FUNCTION, randomFn));
+    
+    // is_nan(x) -> bool
+    auto isNanFn = std::make_shared<FunctionType>();
+    isNanFn->params.push_back({"x", reg.floatType()});
+    isNanFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_nan", SymbolKind::FUNCTION, isNanFn));
+    
+    // is_inf(x) -> bool
+    auto isInfFn = std::make_shared<FunctionType>();
+    isInfFn->params.push_back({"x", reg.floatType()});
+    isInfFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_inf", SymbolKind::FUNCTION, isInfFn));
+    
+    // ===== Extended List Builtins =====
+    // first(list) -> any - Get first element
+    auto firstFn = std::make_shared<FunctionType>();
+    firstFn->params.push_back({"list", reg.anyType()});
+    firstFn->returnType = reg.anyType();
+    symbols_.define(Symbol("first", SymbolKind::FUNCTION, firstFn));
+    
+    // last(list) -> any - Get last element
+    auto lastFn = std::make_shared<FunctionType>();
+    lastFn->params.push_back({"list", reg.anyType()});
+    lastFn->returnType = reg.anyType();
+    symbols_.define(Symbol("last", SymbolKind::FUNCTION, lastFn));
+    
+    // get(list, index) -> any - Get element at index
+    auto getFn = std::make_shared<FunctionType>();
+    getFn->params.push_back({"list", reg.anyType()});
+    getFn->params.push_back({"index", reg.intType()});
+    getFn->returnType = reg.anyType();
+    symbols_.define(Symbol("get", SymbolKind::FUNCTION, getFn));
+    
+    // reverse(list) -> list - Reverse list
+    auto reverseFn = std::make_shared<FunctionType>();
+    reverseFn->params.push_back({"list", reg.anyType()});
+    reverseFn->returnType = reg.anyType();
+    symbols_.define(Symbol("reverse", SymbolKind::FUNCTION, reverseFn));
+    
+    // index(list, elem) -> int - Find element index (-1 if not found)
+    auto indexFn = std::make_shared<FunctionType>();
+    indexFn->params.push_back({"list", reg.anyType()});
+    indexFn->params.push_back({"elem", reg.anyType()});
+    indexFn->returnType = reg.intType();
+    symbols_.define(Symbol("index", SymbolKind::FUNCTION, indexFn));
+    
+    // includes(list, elem) -> bool - Check if list contains element
+    auto includesFn = std::make_shared<FunctionType>();
+    includesFn->params.push_back({"list", reg.anyType()});
+    includesFn->params.push_back({"elem", reg.anyType()});
+    includesFn->returnType = reg.boolType();
+    symbols_.define(Symbol("includes", SymbolKind::FUNCTION, includesFn));
+    
+    // take(list, n) -> list - Take first n elements
+    auto takeFn = std::make_shared<FunctionType>();
+    takeFn->params.push_back({"list", reg.anyType()});
+    takeFn->params.push_back({"n", reg.intType()});
+    takeFn->returnType = reg.anyType();
+    symbols_.define(Symbol("take", SymbolKind::FUNCTION, takeFn));
+    
+    // drop(list, n) -> list - Drop first n elements
+    auto dropFn = std::make_shared<FunctionType>();
+    dropFn->params.push_back({"list", reg.anyType()});
+    dropFn->params.push_back({"n", reg.intType()});
+    dropFn->returnType = reg.anyType();
+    symbols_.define(Symbol("drop", SymbolKind::FUNCTION, dropFn));
+    
+    // min_of(list) -> any - Get minimum element
+    auto minOfFn = std::make_shared<FunctionType>();
+    minOfFn->params.push_back({"list", reg.anyType()});
+    minOfFn->returnType = reg.anyType();
+    symbols_.define(Symbol("min_of", SymbolKind::FUNCTION, minOfFn));
+    
+    // max_of(list) -> any - Get maximum element
+    auto maxOfFn = std::make_shared<FunctionType>();
+    maxOfFn->params.push_back({"list", reg.anyType()});
+    maxOfFn->returnType = reg.anyType();
+    symbols_.define(Symbol("max_of", SymbolKind::FUNCTION, maxOfFn));
+    
+    // ===== Extended Time Builtins =====
+    // now_us() -> int - Current time in microseconds
+    auto nowUsFn = std::make_shared<FunctionType>();
+    nowUsFn->returnType = reg.intType();
+    symbols_.define(Symbol("now_us", SymbolKind::FUNCTION, nowUsFn));
+    
+    // weekday() -> int - Day of week (0=Sunday)
+    auto weekdayFn = std::make_shared<FunctionType>();
+    weekdayFn->returnType = reg.intType();
+    symbols_.define(Symbol("weekday", SymbolKind::FUNCTION, weekdayFn));
+    
+    // day_of_year() -> int - Day of year (1-366)
+    auto dayOfYearFn = std::make_shared<FunctionType>();
+    dayOfYearFn->returnType = reg.intType();
+    symbols_.define(Symbol("day_of_year", SymbolKind::FUNCTION, dayOfYearFn));
+    
+    // make_time(year, month, day, hour, min, sec) -> int - Create timestamp
+    auto makeTimeFn = std::make_shared<FunctionType>();
+    makeTimeFn->params.push_back({"year", reg.intType()});
+    makeTimeFn->params.push_back({"month", reg.intType()});
+    makeTimeFn->params.push_back({"day", reg.intType()});
+    makeTimeFn->params.push_back({"hour", reg.intType()});
+    makeTimeFn->params.push_back({"min", reg.intType()});
+    makeTimeFn->params.push_back({"sec", reg.intType()});
+    makeTimeFn->returnType = reg.intType();
+    symbols_.define(Symbol("make_time", SymbolKind::FUNCTION, makeTimeFn));
+    
+    // add_days(timestamp, days) -> int
+    auto addDaysFn = std::make_shared<FunctionType>();
+    addDaysFn->params.push_back({"timestamp", reg.intType()});
+    addDaysFn->params.push_back({"days", reg.intType()});
+    addDaysFn->returnType = reg.intType();
+    symbols_.define(Symbol("add_days", SymbolKind::FUNCTION, addDaysFn));
+    
+    // add_hours(timestamp, hours) -> int
+    auto addHoursFn = std::make_shared<FunctionType>();
+    addHoursFn->params.push_back({"timestamp", reg.intType()});
+    addHoursFn->params.push_back({"hours", reg.intType()});
+    addHoursFn->returnType = reg.intType();
+    symbols_.define(Symbol("add_hours", SymbolKind::FUNCTION, addHoursFn));
+    
+    // diff_days(t1, t2) -> int - Difference in days
+    auto diffDaysFn = std::make_shared<FunctionType>();
+    diffDaysFn->params.push_back({"t1", reg.intType()});
+    diffDaysFn->params.push_back({"t2", reg.intType()});
+    diffDaysFn->returnType = reg.intType();
+    symbols_.define(Symbol("diff_days", SymbolKind::FUNCTION, diffDaysFn));
+    
+    // is_leap_year(year) -> bool
+    auto isLeapYearFn = std::make_shared<FunctionType>();
+    isLeapYearFn->params.push_back({"year", reg.intType()});
+    isLeapYearFn->returnType = reg.boolType();
+    symbols_.define(Symbol("is_leap_year", SymbolKind::FUNCTION, isLeapYearFn));
+    
+    // ===== Extended System Builtins =====
+    // env(name) -> string - Get environment variable
+    auto envFn = std::make_shared<FunctionType>();
+    envFn->params.push_back({"name", reg.stringType()});
+    envFn->returnType = reg.stringType();
+    symbols_.define(Symbol("env", SymbolKind::FUNCTION, envFn));
+    
+    // set_env(name, value) -> bool - Set environment variable
+    auto setEnvFn = std::make_shared<FunctionType>();
+    setEnvFn->params.push_back({"name", reg.stringType()});
+    setEnvFn->params.push_back({"value", reg.stringType()});
+    setEnvFn->returnType = reg.boolType();
+    symbols_.define(Symbol("set_env", SymbolKind::FUNCTION, setEnvFn));
+    
+    // home_dir() -> string - Get user home directory
+    auto homeDirFn = std::make_shared<FunctionType>();
+    homeDirFn->returnType = reg.stringType();
+    symbols_.define(Symbol("home_dir", SymbolKind::FUNCTION, homeDirFn));
+    
+    // temp_dir() -> string - Get temp directory
+    auto tempDirFn = std::make_shared<FunctionType>();
+    tempDirFn->returnType = reg.stringType();
+    symbols_.define(Symbol("temp_dir", SymbolKind::FUNCTION, tempDirFn));
+    
+    // assert(condition, message?) -> void
+    auto assertFn = std::make_shared<FunctionType>();
+    assertFn->params.push_back({"condition", reg.boolType()});
+    assertFn->params.push_back({"message", reg.stringType()});
+    assertFn->isVariadic = true;  // message is optional
+    assertFn->returnType = reg.voidType();
+    symbols_.define(Symbol("assert", SymbolKind::FUNCTION, assertFn));
+    
+    // panic(message) -> void - Terminate with error
+    auto panicFn = std::make_shared<FunctionType>();
+    panicFn->params.push_back({"message", reg.stringType()});
+    panicFn->returnType = reg.voidType();
+    symbols_.define(Symbol("panic", SymbolKind::FUNCTION, panicFn));
+    
+    // debug(value) -> void - Print debug info
+    auto debugFn = std::make_shared<FunctionType>();
+    debugFn->params.push_back({"value", reg.anyType()});
+    debugFn->returnType = reg.voidType();
+    symbols_.define(Symbol("debug", SymbolKind::FUNCTION, debugFn));
+    
+    // system(command) -> int - Execute shell command
+    auto systemFn = std::make_shared<FunctionType>();
+    systemFn->params.push_back({"command", reg.stringType()});
+    systemFn->returnType = reg.intType();
+    symbols_.define(Symbol("system", SymbolKind::FUNCTION, systemFn));
 }
 
 bool TypeChecker::check(Program& program) {
@@ -494,6 +915,19 @@ TypePtr TypeChecker::parseGenericType(const std::string& str) {
     } else if (baseName == "Result") {
         // Result[T, E] - for now treat as generic
         return reg.genericType(baseName, typeArgs);
+    } else if (baseName == "chan" || baseName == "Chan" || baseName == "Channel") {
+        if (typeArgs.size() >= 1) {
+            int64_t bufSize = 0;  // Default unbuffered
+            return reg.channelType(typeArgs[0], bufSize);
+        }
+    } else if (baseName == "Mutex") {
+        if (typeArgs.size() == 1) {
+            return reg.mutexType(typeArgs[0]);
+        }
+    } else if (baseName == "RWLock") {
+        if (typeArgs.size() == 1) {
+            return reg.rwlockType(typeArgs[0]);
+        }
     }
     
     // Look up user-defined generic type

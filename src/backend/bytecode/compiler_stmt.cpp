@@ -284,5 +284,11 @@ void Compiler::visit(ContinueStmt&) {
     }
 }
 void Compiler::visit(DeleteStmt& node) { node.expr->accept(*this); emit(OpCode::POP); }
+void Compiler::visit(LockStmt& node) { 
+    // Stub - native codegen handles this properly
+    // In bytecode mode, just execute the body without locking
+    node.body->accept(*this);
+}
+void Compiler::visit(AsmStmt& node) { (void)node; /* Inline assembly not supported in bytecode mode */ }
 
 } // namespace flex

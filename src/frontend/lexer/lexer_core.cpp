@@ -16,15 +16,21 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"try", TokenType::TRY}, {"use", TokenType::USE}, {"layer", TokenType::LAYER},
     {"macro", TokenType::MACRO}, {"import", TokenType::IMPORT}, {"module", TokenType::MODULE}, {"extern", TokenType::EXTERN},
     {"async", TokenType::ASYNC}, {"await", TokenType::AWAIT}, {"spawn", TokenType::SPAWN},
-    {"record", TokenType::RECORD}, {"enum", TokenType::ENUM},
+    {"record", TokenType::RECORD}, {"enum", TokenType::ENUM}, {"union", TokenType::UNION},
     {"let", TokenType::LET}, {"mut", TokenType::MUT}, {"const", TokenType::CONST},
     {"unsafe", TokenType::UNSAFE}, {"ptr", TokenType::PTR}, {"ref", TokenType::REF},
-    {"new", TokenType::NEW}, {"delete", TokenType::DELETE},
+    {"new", TokenType::NEW}, {"delete", TokenType::DELETE}, {"asm", TokenType::ASM},
     {"break", TokenType::BREAK}, {"continue", TokenType::CONTINUE},
     {"type", TokenType::TYPE}, {"alias", TokenType::ALIAS}, {"syntax", TokenType::SYNTAX},
     {"pub", TokenType::PUB}, {"priv", TokenType::PRIV},
     {"self", TokenType::SELF}, {"super", TokenType::SUPER},
-    {"trait", TokenType::TRAIT}, {"impl", TokenType::IMPL}
+    {"trait", TokenType::TRAIT}, {"impl", TokenType::IMPL},
+    {"chan", TokenType::CHAN},
+    {"Mutex", TokenType::MUTEX},
+    {"RWLock", TokenType::RWLOCK},
+    {"Cond", TokenType::COND},
+    {"Semaphore", TokenType::SEMAPHORE},
+    {"lock", TokenType::LOCK}
 };
 
 Lexer::Lexer(const std::string& src, const std::string& fname)

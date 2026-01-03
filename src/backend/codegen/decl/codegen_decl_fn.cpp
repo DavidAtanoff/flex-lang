@@ -329,6 +329,7 @@ static void collectNestedFunctions(Statement* stmt, std::vector<FnDecl*>& nested
 void NativeCodeGen::visit(FnDecl& node) {
     std::map<std::string, int32_t> savedLocals = locals;
     std::map<std::string, std::string> savedConstStrVars = constStrVars;
+    std::map<std::string, std::string> savedVarRecordTypes = varRecordTypes_;
     int32_t savedStackOffset = stackOffset;
     bool savedInFunction = inFunction;
     int32_t savedFunctionStackSize = functionStackSize_;
@@ -350,11 +351,15 @@ void NativeCodeGen::visit(FnDecl& node) {
     
     inFunction = true;
     locals.clear();
+    varRecordTypes_.clear();
     stackOffset = 0;
     stackAllocated_ = false;
     varRegisters_.clear();
     
     isLeafFunction_ = useLeafOptimization_ && checkIsLeafFunction(node.body.get());
+    
+    // Track calling convention for this function
+    fnCallingConvs_[node.name] = node.callingConv;
     
     if (useRegisterAllocation_) {
         regAlloc_.analyze(node);
@@ -385,6 +390,30 @@ void NativeCodeGen::visit(FnDecl& node) {
     
     asm_.label(node.name);
     
+    // Handle naked functions - no prologue/epilogue
+    if (node.isNaked) {
+        // For naked functions, just emit the body directly
+        // The user is responsible for all stack management
+        node.body->accept(*this);
+        
+        // Restore state
+        locals = savedLocals;
+        constStrVars = savedConstStrVars;
+        varRecordTypes_ = savedVarRecordTypes;
+        stackOffset = savedStackOffset;
+        inFunction = savedInFunction;
+        functionStackSize_ = savedFunctionStackSize;
+        stackAllocated_ = savedStackAllocated;
+        varRegisters_ = savedVarRegisters;
+        isLeafFunction_ = savedIsLeaf;
+        stdoutHandleCached_ = savedStdoutCached;
+        
+        for (auto* nested : nestedFunctions) {
+            nested->accept(*this);
+        }
+        return;
+    }
+    
     if (isLeafFunction_ && varRegisters_.size() == node.params.size() && node.params.size() <= 4) {
         emitSaveCalleeSavedRegs();
         
@@ -393,6 +422,10 @@ void NativeCodeGen::visit(FnDecl& node) {
             emitMoveParamToVar((int)i, node.params[i].first, node.params[i].second);
             if (node.params[i].second == "float") {
                 floatVars.insert(node.params[i].first);
+            }
+            // Track record type for parameters
+            if (recordTypes_.find(node.params[i].second) != recordTypes_.end()) {
+                varRecordTypes_[node.params[i].first] = node.params[i].second;
             }
         }
         
@@ -411,6 +444,10 @@ void NativeCodeGen::visit(FnDecl& node) {
             emitMoveParamToVar((int)i, node.params[i].first, node.params[i].second);
             if (node.params[i].second == "float") {
                 floatVars.insert(node.params[i].first);
+            }
+            // Track record type for parameters
+            if (recordTypes_.find(node.params[i].second) != recordTypes_.end()) {
+                varRecordTypes_[node.params[i].first] = node.params[i].second;
             }
         }
     }
@@ -433,6 +470,7 @@ void NativeCodeGen::visit(FnDecl& node) {
     
     locals = savedLocals;
     constStrVars = savedConstStrVars;
+    varRecordTypes_ = savedVarRecordTypes;
     stackOffset = savedStackOffset;
     inFunction = savedInFunction;
     functionStackSize_ = savedFunctionStackSize;

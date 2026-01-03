@@ -25,12 +25,15 @@ set(FRONTEND_SOURCES
     src/frontend/ast/ast.cpp
     # Syntax macros
     src/frontend/macro/syntax_macro.cpp
-    # Modular parser
+    # Modular parser - Core
     src/frontend/parser/parser_core.cpp
-    src/frontend/parser/parser_declarations.cpp
-    src/frontend/parser/parser_statements.cpp
-    src/frontend/parser/parser_expressions.cpp
     src/frontend/parser/parser_types.cpp
+    # Modular parser - Declarations
+    src/frontend/parser/parser_declarations.cpp
+    # Modular parser - Statements
+    src/frontend/parser/parser_statements.cpp
+    # Modular parser - Expressions (Pratt parser)
+    src/frontend/parser/parser_expressions.cpp
     # Modular lexer
     src/frontend/lexer/lexer_core.cpp
     src/frontend/lexer/lexer_scan.cpp
@@ -78,7 +81,6 @@ set(CLI_SOURCES
 
 set(STDLIB_SOURCES
     src/stdlib/stdlib_core.cpp
-    src/stdlib/io/io.cpp
     src/stdlib/string/string.cpp
     src/stdlib/math/math.cpp
     src/stdlib/list/list.cpp
@@ -89,7 +91,7 @@ set(STDLIB_SOURCES
 )
 
 set(BACKEND_SOURCES
-    # x64 native code generation
+    # x64 native code generation - Core
     src/backend/x64/x64_assembler.cpp
     src/backend/x64/pe_generator.cpp
     src/backend/x64/peephole.cpp
@@ -102,17 +104,47 @@ set(BACKEND_SOURCES
     src/backend/codegen/core/codegen_compile.cpp
     src/backend/codegen/core/codegen_helpers.cpp
     src/backend/codegen/core/codegen_print.cpp
+    src/backend/codegen/core/codegen_const_eval.cpp
+    src/backend/codegen/core/codegen_type_utils.cpp
+    src/backend/codegen/core/codegen_record_layout.cpp
     # Modular native codegen - Expressions
     src/backend/codegen/expr/codegen_expr_literals.cpp
     src/backend/codegen/expr/codegen_expr_binary.cpp
     src/backend/codegen/expr/codegen_expr_collections.cpp
     src/backend/codegen/expr/codegen_expr_misc.cpp
+    src/backend/codegen/expr/codegen_expr_assign.cpp
+    src/backend/codegen/expr/codegen_expr_lambda.cpp
+    src/backend/codegen/expr/codegen_expr_pointer.cpp
+    src/backend/codegen/expr/codegen_expr_async.cpp
+    src/backend/codegen/expr/codegen_expr_channel.cpp
+    src/backend/codegen/expr/codegen_expr_sync.cpp
+    src/backend/codegen/expr/codegen_expr_index.cpp
+    src/backend/codegen/expr/codegen_expr_list.cpp
+    src/backend/codegen/expr/codegen_expr_record.cpp
     # Modular native codegen - Calls
     src/backend/codegen/call/codegen_call_core.cpp
+    src/backend/codegen/call/codegen_call_dispatch.cpp
+    src/backend/codegen/call/codegen_call_builtins_string.cpp
+    src/backend/codegen/call/codegen_call_builtins_io.cpp
+    src/backend/codegen/call/codegen_call_builtins_math.cpp
+    src/backend/codegen/call/codegen_call_builtins_conv.cpp
+    src/backend/codegen/call/codegen_call_builtins_system.cpp
+    src/backend/codegen/call/codegen_call_builtins_list.cpp
+    src/backend/codegen/call/codegen_call_builtins_result.cpp
+    src/backend/codegen/call/codegen_call_builtins_memory.cpp
+    src/backend/codegen/call/codegen_call_builtins_gc.cpp
+    # Extended builtins (ported from stdlib)
+    src/backend/codegen/call/codegen_call_builtins_string_ext.cpp
+    src/backend/codegen/call/codegen_call_builtins_math_ext.cpp
+    src/backend/codegen/call/codegen_call_builtins_list_ext.cpp
+    src/backend/codegen/call/codegen_call_builtins_time_ext.cpp
+    src/backend/codegen/call/codegen_call_builtins_system_ext.cpp
     # Modular native codegen - Statements
     src/backend/codegen/stmt/codegen_stmt_control.cpp
     src/backend/codegen/stmt/codegen_stmt_vars.cpp
     src/backend/codegen/stmt/codegen_stmt_misc.cpp
+    src/backend/codegen/stmt/codegen_stmt_vardecl.cpp
+    src/backend/codegen/stmt/codegen_stmt_assign.cpp
     # Modular native codegen - Declarations
     src/backend/codegen/decl/codegen_decl_fn.cpp
     src/backend/codegen/decl/codegen_decl_types.cpp

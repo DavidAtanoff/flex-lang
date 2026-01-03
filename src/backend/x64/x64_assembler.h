@@ -48,7 +48,16 @@ public:
     void mov_mem_rcx_rax();
     void mov_mem_rax_rcx();
     void mov_rcx_mem_rax();
+    void mov_rdx_mem_rax();  // rdx = [rax]
     void mov_rax_mem_rcx();  // rax = [rcx]
+    void mov_rax_mem_rsp(int32_t offset);  // rax = [rsp + offset]
+    void mov_rcx_mem_rax(int32_t offset);  // rcx = [rax + offset]
+    void mov_rdx_mem_rax(int32_t offset);  // rdx = [rax + offset]
+    void mov_r8_mem_rax(int32_t offset);   // r8 = [rax + offset]
+    void mov_r9_mem_rcx(int32_t offset);   // r9 = [rcx + offset]
+    void mov_mem_rax_rcx(int32_t offset);  // [rax + offset] = rcx
+    void mov_mem_rax_rdx(int32_t offset);  // [rax + offset] = rdx
+    void mov_mem_rcx_rax(int32_t offset);  // [rcx + offset] = rax
     
     // LEA
     void lea_rcx_rip_fixup(uint32_t targetRVA);
@@ -56,6 +65,7 @@ public:
     void lea_rax_rbp(int32_t offset);
     void lea_rcx_rbp(int32_t offset);
     void lea_rdx_rbp_offset(int32_t offset);
+    void lea_rcx_rax_offset(int32_t offset);  // rcx = rax + offset
     
     // Stack
     void push_rbp();
@@ -70,6 +80,7 @@ public:
     void pop_rdi();
     void pop_r8();
     void pop_r9();
+    void push_r9();
     void mov_rbp_rsp();
     void mov_rsp_rbp();
     void sub_rsp_imm32(int32_t val);
@@ -81,16 +92,22 @@ public:
     void imul_rax_rcx();
     void cqo();
     void idiv_rcx();
+    void div_rdx();     // unsigned divide by rdx
     void neg_rax();
+    void imul_rdx_r8(); // rdx = rdx * r8
+    void add_rcx_rdx(); // rcx += rdx
     void inc_rax();
     void inc_rcx();
     void dec_rax();
+    void dec_rcx();
     
     // Comparison
     void cmp_rax_rcx();
     void cmp_rax_imm32(int32_t val);
     void cmp_rax_mem_rbp(int32_t offset);
+    void cmp_rcx_rdx();  // compare rcx with rdx
     void test_rax_rax();
+    void test_rcx_rcx();
     void sete_al();
     void setne_al();
     void setl_al();
@@ -102,6 +119,10 @@ public:
     // Logical
     void xor_rax_rax();
     void xor_ecx_ecx();
+    void xor_rcx_rcx();
+    void xor_rdx_rdx();
+    void xor_r8_r8();
+    void xor_r9_r9();
     void and_rax_rcx();
     void or_rax_rcx();
     
@@ -374,6 +395,7 @@ public:
     void mov_rax_rdx();
     void mov_rdx_rcx();
     void mov_rcx_rdx();
+    void xchg_rax_rcx();  // exchange rax and rcx
     void mov_rdi_rax();
     void mov_rax_rdi();
     void mov_rcx_rdi();

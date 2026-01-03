@@ -263,7 +263,8 @@ void Lexer::scanToken() {
             else addToken(TokenType::BANG);
             break;
         case '<':
-            if (match('=')) {
+            if (match('-')) addToken(TokenType::CHAN_SEND);  // <- for channel send/receive
+            else if (match('=')) {
                 if (match('>')) addToken(TokenType::SPACESHIP);
                 else addToken(TokenType::LE);
             } else addToken(TokenType::LT);
@@ -289,6 +290,21 @@ void Lexer::scanToken() {
             atLineStart = true;
             break;
         case '"': case '\'': scanString(); break;
+        case '#':
+            // Check for attribute: #[...]
+            if (peek() == '[') {
+                advance();  // consume '['
+                std::string attrContent;
+                while (!isAtEnd() && peek() != ']') {
+                    attrContent += advance();
+                }
+                if (!isAtEnd()) advance();  // consume ']'
+                addToken(TokenType::ATTRIBUTE, attrContent);
+            } else {
+                // Single-line comment (Python style)
+                scanComment();
+            }
+            break;
         default:
             if (isDigit(c)) scanNumber();
             else if (isAlpha(c)) scanIdentifier();

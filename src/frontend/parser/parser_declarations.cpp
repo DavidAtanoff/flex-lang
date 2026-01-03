@@ -9,6 +9,44 @@ namespace flex {
 StmtPtr Parser::declaration() {
     skipNewlines();
     
+    // Parse attributes: #[repr(C)], #[repr(packed)], #[repr(align(N))], #[cdecl], #[stdcall], etc.
+    bool reprC = false;
+    bool reprPacked = false;
+    int reprAlign = 0;
+    CallingConvention callingConv = CallingConvention::Default;
+    bool isNaked = false;
+    
+    while (check(TokenType::ATTRIBUTE)) {
+        auto attrTok = advance();
+        std::string attr = std::get<std::string>(attrTok.literal);
+        
+        // Parse repr(...) attributes
+        if (attr.find("repr(") == 0) {
+            std::string reprArg = attr.substr(5, attr.length() - 6);  // Extract content between repr( and )
+            if (reprArg == "C") {
+                reprC = true;
+            } else if (reprArg == "packed") {
+                reprPacked = true;
+            } else if (reprArg.find("align(") == 0) {
+                std::string alignStr = reprArg.substr(6, reprArg.length() - 7);
+                reprAlign = std::stoi(alignStr);
+            }
+        }
+        // Parse calling convention attributes
+        else if (attr == "cdecl") {
+            callingConv = CallingConvention::Cdecl;
+        } else if (attr == "stdcall") {
+            callingConv = CallingConvention::Stdcall;
+        } else if (attr == "fastcall") {
+            callingConv = CallingConvention::Fastcall;
+        } else if (attr == "win64") {
+            callingConv = CallingConvention::Win64;
+        } else if (attr == "naked") {
+            isNaked = true;
+        }
+        skipNewlines();
+    }
+    
     bool isPublic = match(TokenType::PUB);
     bool isPrivate = !isPublic && match(TokenType::PRIV);
     bool isAsync = match(TokenType::ASYNC);
@@ -18,12 +56,26 @@ StmtPtr Parser::declaration() {
         auto* fnDecl = static_cast<FnDecl*>(fn.get());
         if (isAsync) fnDecl->isAsync = true;
         fnDecl->isPublic = isPublic;
+        fnDecl->callingConv = callingConv;
+        fnDecl->isNaked = isNaked;
         return fn;
     }
     if (match(TokenType::RECORD)) {
         auto rec = recordDeclaration();
-        static_cast<RecordDecl*>(rec.get())->isPublic = isPublic;
+        auto* recDecl = static_cast<RecordDecl*>(rec.get());
+        recDecl->isPublic = isPublic;
+        recDecl->reprC = reprC;
+        recDecl->reprPacked = reprPacked;
+        recDecl->reprAlign = reprAlign;
         return rec;
+    }
+    if (match(TokenType::UNION)) {
+        auto un = unionDeclaration();
+        auto* unDecl = static_cast<UnionDecl*>(un.get());
+        unDecl->isPublic = isPublic;
+        unDecl->reprC = reprC;
+        unDecl->reprAlign = reprAlign;
+        return un;
     }
     if (match(TokenType::ENUM)) return enumDeclaration();
     if (match(TokenType::TYPE)) return typeAliasDeclaration();
@@ -37,6 +89,7 @@ StmtPtr Parser::declaration() {
     if (match(TokenType::SYNTAX)) return syntaxMacroDeclaration();
     if (match(TokenType::LAYER)) return layerDeclaration();
     if (match(TokenType::UNSAFE)) return unsafeBlock();
+    if (match(TokenType::ASM)) return asmStatement();
     if (match({TokenType::LET, TokenType::MUT, TokenType::CONST})) return varDeclaration();
     
     (void)isPublic;
@@ -192,16 +245,59 @@ StmtPtr Parser::recordDeclaration() {
     while (!check(TokenType::DEDENT) && !isAtEnd()) {
         auto fieldName = consume(TokenType::IDENTIFIER, "Expected field name").lexeme;
         std::string fieldType;
+        BitfieldSpec bitfield;
+        
         if (match(TokenType::COLON)) {
             fieldType = parseType();
+            
+            // Check for bitfield specification: field: int : 4
+            if (match(TokenType::COLON)) {
+                auto bitWidthTok = consume(TokenType::INTEGER, "Expected bit width for bitfield");
+                bitfield.bitWidth = static_cast<int>(std::get<int64_t>(bitWidthTok.literal));
+            }
         }
         rec->fields.emplace_back(fieldName, fieldType);
+        rec->bitfields.push_back(bitfield);
         match(TokenType::NEWLINE);
         skipNewlines();
     }
     
     consume(TokenType::DEDENT, "Expected end of record");
     return rec;
+}
+
+StmtPtr Parser::unionDeclaration() {
+    auto loc = previous().location;
+    auto name = consume(TokenType::IDENTIFIER, "Expected union name").lexeme;
+    
+    auto un = std::make_unique<UnionDecl>(name, loc);
+    
+    if (match(TokenType::LBRACKET)) {
+        do {
+            un->typeParams.push_back(consume(TokenType::IDENTIFIER, "Expected type parameter").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACKET, "Expected ']' after type parameters");
+    }
+    
+    consume(TokenType::COLON, "Expected ':' after union name");
+    match(TokenType::NEWLINE);
+    
+    consume(TokenType::INDENT, "Expected indented union fields");
+    skipNewlines();
+    
+    while (!check(TokenType::DEDENT) && !isAtEnd()) {
+        auto fieldName = consume(TokenType::IDENTIFIER, "Expected field name").lexeme;
+        std::string fieldType;
+        if (match(TokenType::COLON)) {
+            fieldType = parseType();
+        }
+        un->fields.emplace_back(fieldName, fieldType);
+        match(TokenType::NEWLINE);
+        skipNewlines();
+    }
+    
+    consume(TokenType::DEDENT, "Expected end of union");
+    return un;
 }
 
 StmtPtr Parser::enumDeclaration() {
@@ -227,8 +323,11 @@ StmtPtr Parser::enumDeclaration() {
         auto variantName = consume(TokenType::IDENTIFIER, "Expected variant name").lexeme;
         std::optional<int64_t> value;
         if (match(TokenType::ASSIGN)) {
+            // Handle negative values: -1, -2, etc.
+            bool isNegative = match(TokenType::MINUS);
             auto valTok = consume(TokenType::INTEGER, "Expected integer value");
-            value = std::get<int64_t>(valTok.literal);
+            int64_t intValue = std::get<int64_t>(valTok.literal);
+            value = isNegative ? -intValue : intValue;
         }
         en->variants.emplace_back(variantName, value);
         match(TokenType::NEWLINE);
@@ -243,6 +342,14 @@ StmtPtr Parser::typeAliasDeclaration() {
     auto loc = previous().location;
     auto name = consume(TokenType::IDENTIFIER, "Expected type name").lexeme;
     consume(TokenType::ASSIGN, "Expected '=' after type name");
+    
+    // Check for opaque type: type Handle = opaque
+    if (check(TokenType::IDENTIFIER) && peek().lexeme == "opaque") {
+        advance();  // consume 'opaque'
+        match(TokenType::NEWLINE);
+        return std::make_unique<TypeAlias>(name, "opaque", loc);
+    }
+    
     auto target = parseType();
     match(TokenType::NEWLINE);
     return std::make_unique<TypeAlias>(name, target, loc);
@@ -733,6 +840,58 @@ StmtPtr Parser::unsafeBlock() {
     match(TokenType::NEWLINE);
     auto body = block();
     return std::make_unique<UnsafeBlock>(std::move(body), loc);
+}
+
+StmtPtr Parser::asmStatement() {
+    auto loc = previous().location;
+    
+    // Expect asm! { ... } or asm!: with indented block
+    if (match(TokenType::BANG)) {
+        // asm! { "code" } or asm!: block
+        if (match(TokenType::LBRACE)) {
+            // asm! { "mov rax, 1" }
+            std::string code;
+            
+            // Parse the assembly code string(s)
+            while (!check(TokenType::RBRACE) && !isAtEnd()) {
+                if (check(TokenType::STRING)) {
+                    if (!code.empty()) code += "\n";
+                    code += std::get<std::string>(advance().literal);
+                } else if (match(TokenType::COMMA) || match(TokenType::NEWLINE)) {
+                    // Skip commas and newlines between strings
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            consume(TokenType::RBRACE, "Expected '}' after asm block");
+            
+            return std::make_unique<AsmStmt>(code, loc);
+        } else if (match(TokenType::COLON)) {
+            // asm!:
+            //     "mov rax, 1"
+            //     "ret"
+            match(TokenType::NEWLINE);
+            consume(TokenType::INDENT, "Expected indented block after asm!:");
+            
+            std::string code;
+            while (!check(TokenType::DEDENT) && !isAtEnd()) {
+                if (check(TokenType::STRING)) {
+                    if (!code.empty()) code += "\n";
+                    code += std::get<std::string>(advance().literal);
+                }
+                match(TokenType::NEWLINE);
+            }
+            
+            if (check(TokenType::DEDENT)) advance();
+            
+            return std::make_unique<AsmStmt>(code, loc);
+        }
+    }
+    
+    // If we get here, syntax is wrong - consume will throw
+    consume(TokenType::BANG, "Expected '!' after asm");
+    return nullptr;
 }
 
 } // namespace flex
