@@ -63,21 +63,27 @@ set(SEMANTIC_SOURCES
     src/semantic/expander/expander_core.cpp
     src/semantic/expander/expander_expand.cpp
     src/semantic/expander/expander_clone.cpp
-    # Optimizer passes (Tier 2-5)
+    # Optimizer passes (Tier 2-5) - Organized by category
     src/semantic/optimizer/optimizer.cpp
-    src/semantic/optimizer/constant_folding.cpp
-    src/semantic/optimizer/constant_propagation.cpp
-    src/semantic/optimizer/dead_code.cpp
-    src/semantic/optimizer/inlining.cpp
-    src/semantic/optimizer/tail_call.cpp
-    src/semantic/optimizer/ctfe.cpp
-    src/semantic/optimizer/ssa.cpp
-    src/semantic/optimizer/loop_optimizer.cpp
-    src/semantic/optimizer/instruction_scheduler.cpp
-    src/semantic/optimizer/cse.cpp
-    src/semantic/optimizer/gvn.cpp
-    src/semantic/optimizer/algebraic.cpp
-    src/semantic/optimizer/pgo.cpp
+    # Scalar optimizations
+    src/semantic/optimizer/scalar/constant_folding.cpp
+    src/semantic/optimizer/scalar/constant_propagation.cpp
+    src/semantic/optimizer/scalar/dead_code.cpp
+    src/semantic/optimizer/scalar/cse.cpp
+    src/semantic/optimizer/scalar/gvn.cpp
+    src/semantic/optimizer/scalar/algebraic.cpp
+    # Loop optimizations
+    src/semantic/optimizer/loop/loop_optimizer.cpp
+    # Function optimizations
+    src/semantic/optimizer/function/inlining.cpp
+    src/semantic/optimizer/function/tail_call.cpp
+    src/semantic/optimizer/function/ctfe.cpp
+    # CFG optimizations
+    src/semantic/optimizer/cfg/simplify_cfg.cpp
+    # Analysis passes
+    src/semantic/optimizer/analysis/ssa.cpp
+    src/semantic/optimizer/analysis/instruction_scheduler.cpp
+    src/semantic/optimizer/analysis/pgo.cpp
 )
 
 set(CLI_SOURCES
@@ -190,6 +196,11 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/semantic/expander
     ${CMAKE_SOURCE_DIR}/src/semantic/module
     ${CMAKE_SOURCE_DIR}/src/semantic/optimizer
+    ${CMAKE_SOURCE_DIR}/src/semantic/optimizer/scalar
+    ${CMAKE_SOURCE_DIR}/src/semantic/optimizer/loop
+    ${CMAKE_SOURCE_DIR}/src/semantic/optimizer/function
+    ${CMAKE_SOURCE_DIR}/src/semantic/optimizer/cfg
+    ${CMAKE_SOURCE_DIR}/src/semantic/optimizer/analysis
     ${CMAKE_SOURCE_DIR}/src/semantic/generics
     ${CMAKE_SOURCE_DIR}/src/semantic/ownership
     ${CMAKE_SOURCE_DIR}/src/semantic/ctfe

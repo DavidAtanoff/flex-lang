@@ -1,5 +1,5 @@
 // Tyl Compiler - Optimizer Infrastructure
-// Tier 2-5 Optimization Passes: Constant Folding, DCE, Inlining, TCO, SSA, Loop Opts, Scheduling
+// Tier 2-5 Optimization Passes: Constant Folding, DCE, Inlining, TCO, SSA, Loop Opts, Scheduling, CFG
 #ifndef TYL_OPTIMIZER_H
 #define TYL_OPTIMIZER_H
 
@@ -20,6 +20,7 @@ class CopyPropagationPass;
 class AlgebraicSimplificationPass;
 class AdvancedStrengthReductionPass;
 class PGOPass;
+class SimplifyCFGPass;
 struct ProgramProfile;
 
 // Base class for all optimization passes
@@ -75,6 +76,7 @@ public:
     void enableLoopOptimization(bool enable = true);
     void enableInstructionScheduling(bool enable = true);
     void enablePGO(bool enable = true);
+    void enableSimplifyCFG(bool enable = true);
     
     // PGO configuration
     void setProfileFile(const std::string& filename) { profileFile_ = filename; }
@@ -109,6 +111,7 @@ private:
     bool loopOptEnabled_ = true;
     bool schedulingEnabled_ = true;
     bool pgoEnabled_ = false;
+    bool simplifyCFGEnabled_ = true;  // CFG simplification
     std::string profileFile_;
     
     // Inlining configuration

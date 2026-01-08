@@ -1,19 +1,31 @@
 // Tyl Compiler - Optimizer Implementation
 // Complete Tier 2-5 Optimization Pipeline
 #include "optimizer.h"
-#include "constant_folding.h"
-#include "constant_propagation.h"
-#include "dead_code.h"
-#include "inlining.h"
-#include "tail_call.h"
-#include "ctfe.h"
-#include "ssa.h"
-#include "loop_optimizer.h"
-#include "instruction_scheduler.h"
-#include "cse.h"
-#include "gvn.h"
-#include "algebraic.h"
-#include "pgo.h"
+
+// Scalar optimizations
+#include "scalar/constant_folding.h"
+#include "scalar/constant_propagation.h"
+#include "scalar/dead_code.h"
+#include "scalar/cse.h"
+#include "scalar/gvn.h"
+#include "scalar/algebraic.h"
+
+// Loop optimizations
+#include "loop/loop_optimizer.h"
+
+// Function optimizations
+#include "function/inlining.h"
+#include "function/tail_call.h"
+#include "function/ctfe.h"
+
+// CFG optimizations
+#include "cfg/simplify_cfg.h"
+
+// Analysis passes
+#include "analysis/ssa.h"
+#include "analysis/instruction_scheduler.h"
+#include "analysis/pgo.h"
+
 #include <iostream>
 
 namespace tyl {
@@ -41,10 +53,11 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = false;
             loopOptEnabled_ = false;
             schedulingEnabled_ = false;
+            simplifyCFGEnabled_ = false;
             break;
             
         case OptLevel::O1:
-            // Basic optimizations - constant folding, DCE
+            // Basic optimizations - constant folding, DCE, CFG simplification
             constantFoldingEnabled_ = true;
             deadCodeEnabled_ = true;
             inliningEnabled_ = false;
@@ -53,6 +66,7 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = false;
             loopOptEnabled_ = false;
             schedulingEnabled_ = false;
+            simplifyCFGEnabled_ = true;  // Enable at O1
             break;
             
         case OptLevel::O2:
@@ -65,6 +79,7 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = false;
             loopOptEnabled_ = true;
             schedulingEnabled_ = false;
+            simplifyCFGEnabled_ = true;
             aggressiveInlining_ = false;
             maxInlineStatements_ = 10;
             maxInlineCallCount_ = 5;
@@ -80,6 +95,7 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = true;
             loopOptEnabled_ = true;
             schedulingEnabled_ = true;
+            simplifyCFGEnabled_ = true;
             aggressiveInlining_ = true;
             maxInlineStatements_ = 50;
             maxInlineCallCount_ = 20;
@@ -95,6 +111,7 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = false;
             loopOptEnabled_ = true;
             schedulingEnabled_ = false;
+            simplifyCFGEnabled_ = true;
             aggressiveInlining_ = false;
             maxInlineStatements_ = 5;   // Less inlining for smaller code
             maxInlineCallCount_ = 3;
@@ -110,6 +127,7 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = false;
             loopOptEnabled_ = false;    // No loop unrolling
             schedulingEnabled_ = false;
+            simplifyCFGEnabled_ = true;  // Still useful for size
             aggressiveInlining_ = false;
             maxInlineStatements_ = 0;
             maxInlineCallCount_ = 0;
@@ -125,6 +143,7 @@ void Optimizer::setOptLevel(OptLevel level) {
             ssaEnabled_ = true;
             loopOptEnabled_ = true;
             schedulingEnabled_ = true;
+            simplifyCFGEnabled_ = true;
             pgoEnabled_ = true;  // Enable PGO at Ofast
             aggressiveInlining_ = true;
             maxInlineStatements_ = 100;
@@ -285,7 +304,18 @@ void Optimizer::optimize(Program& ast) {
         }
     }
     
-    // PHASE 6: Final cleanup pass
+    // PHASE 6: CFG Simplification (cleanup control flow)
+    if (simplifyCFGEnabled_) {
+        auto cfg = std::make_unique<SimplifyCFGPass>();
+        cfg->run(ast);
+        totalTransformations_ += cfg->transformations();
+        if (verbose_ && cfg->transformations() > 0) {
+            std::cout << "[Optimizer] SimplifyCFG: " 
+                      << cfg->transformations() << " transformation(s)\n";
+        }
+    }
+    
+    // PHASE 7: Final cleanup pass
     if (constantFoldingEnabled_) {
         auto cf = std::make_unique<ConstantFoldingPass>();
         cf->run(ast);
@@ -329,6 +359,10 @@ void Optimizer::enableTailCallOptimization(bool enable) {
 
 void Optimizer::enableCTFE(bool enable) {
     ctfeEnabled_ = enable;
+}
+
+void Optimizer::enableSimplifyCFG(bool enable) {
+    simplifyCFGEnabled_ = enable;
 }
 
 void Optimizer::enableSSA(bool enable) {
