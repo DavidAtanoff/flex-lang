@@ -54,6 +54,7 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"fastcall", TokenType::FASTCALL},
     {"naked", TokenType::NAKED},
     {"comptime", TokenType::COMPTIME},
+    {"assert", TokenType::ASSERT},
     {"require", TokenType::REQUIRE},
     {"ensure", TokenType::ENSURE},
     {"invariant", TokenType::INVARIANT},

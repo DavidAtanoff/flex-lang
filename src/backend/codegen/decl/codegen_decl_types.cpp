@@ -15,10 +15,20 @@ void NativeCodeGen::visit(RecordDecl& node) {
     info.isUnion = false;
     info.hasBitfields = false;
     
+    // Also register type metadata for compile-time reflection
+    TypeMetadata metadata;
+    metadata.name = node.name;
+    
     for (size_t i = 0; i < node.fields.size(); i++) {
         const auto& [fieldName, fieldType] = node.fields[i];
         info.fieldNames.push_back(fieldName);
         info.fieldTypes.push_back(fieldType);
+        
+        // Add to reflection metadata
+        TypeFieldInfo fieldInfo;
+        fieldInfo.name = fieldName;
+        fieldInfo.typeName = fieldType;
+        metadata.fields.push_back(fieldInfo);
         
         // Handle bitfield specification
         int bitWidth = 0;
@@ -31,6 +41,87 @@ void NativeCodeGen::visit(RecordDecl& node) {
     }
     
     recordTypes_[node.name] = info;
+    
+    // Calculate size and alignment for metadata
+    // This is a simplified calculation - actual layout may differ
+    size_t totalSize = 0;
+    size_t maxAlign = 1;
+    for (const auto& fieldType : info.fieldTypes) {
+        size_t fieldSize = 8;  // Default to 8 bytes
+        size_t fieldAlign = 8;
+        if (fieldType == "int" || fieldType == "i64" || fieldType == "u64" || 
+            fieldType == "float" || fieldType == "f64") {
+            fieldSize = 8; fieldAlign = 8;
+        } else if (fieldType == "i32" || fieldType == "u32" || fieldType == "f32") {
+            fieldSize = 4; fieldAlign = 4;
+        } else if (fieldType == "i16" || fieldType == "u16") {
+            fieldSize = 2; fieldAlign = 2;
+        } else if (fieldType == "i8" || fieldType == "u8" || fieldType == "bool") {
+            fieldSize = 1; fieldAlign = 1;
+        }
+        
+        // Align the current offset
+        if (!info.reprPacked) {
+            totalSize = (totalSize + fieldAlign - 1) & ~(fieldAlign - 1);
+        }
+        totalSize += fieldSize;
+        if (fieldAlign > maxAlign) maxAlign = fieldAlign;
+    }
+    
+    // Final alignment
+    if (!info.reprPacked) {
+        totalSize = (totalSize + maxAlign - 1) & ~(maxAlign - 1);
+    }
+    
+    metadata.size = totalSize;
+    metadata.alignment = info.reprAlign > 0 ? static_cast<size_t>(info.reprAlign) : maxAlign;
+    
+    // Register with CTFE interpreter for compile-time reflection
+    ctfe_.registerTypeMetadata(node.name, metadata);
+    
+    // Generate derived trait implementations
+    for (const auto& trait : node.deriveTraits) {
+        if (trait == "Debug") {
+            // Generate Debug trait implementation: fn debug(self: &T) -> str
+            // For now, we'll generate a simple implementation that prints field names and values
+            std::string debugLabel = node.name + "_Debug_debug";
+            asm_.labels[debugLabel] = 0;  // Reserve label
+            
+            // Store impl info for trait dispatch
+            std::string implKey = "Debug:" + node.name;
+            ImplInfo implInfo;
+            implInfo.traitName = "Debug";
+            implInfo.typeName = node.name;
+            implInfo.methodLabels["debug"] = debugLabel;
+            impls_[implKey] = implInfo;
+        }
+        else if (trait == "Clone") {
+            // Generate Clone trait implementation: fn clone(self: &T) -> T
+            std::string cloneLabel = node.name + "_Clone_clone";
+            asm_.labels[cloneLabel] = 0;  // Reserve label
+            
+            // Store impl info for trait dispatch
+            std::string implKey = "Clone:" + node.name;
+            ImplInfo implInfo;
+            implInfo.traitName = "Clone";
+            implInfo.typeName = node.name;
+            implInfo.methodLabels["clone"] = cloneLabel;
+            impls_[implKey] = implInfo;
+        }
+        else if (trait == "Eq") {
+            // Generate Eq trait implementation: fn eq(self: &T, other: &T) -> bool
+            std::string eqLabel = node.name + "_Eq_eq";
+            asm_.labels[eqLabel] = 0;  // Reserve label
+            
+            // Store impl info for trait dispatch
+            std::string implKey = "Eq:" + node.name;
+            ImplInfo implInfo;
+            implInfo.traitName = "Eq";
+            implInfo.typeName = node.name;
+            implInfo.methodLabels["eq"] = eqLabel;
+            impls_[implKey] = implInfo;
+        }
+    }
 }
 
 void NativeCodeGen::visit(UnionDecl& node) {

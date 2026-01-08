@@ -640,6 +640,11 @@ void GenericCollector::visit(ComptimeBlock& node) {
     if (node.body) node.body->accept(*this);
 }
 
+void GenericCollector::visit(ComptimeAssertStmt& node) {
+    // Visit the condition expression to collect any generic usages
+    if (node.condition) node.condition->accept(*this);
+}
+
 void GenericCollector::visit(EffectDecl& node) {
     // Effect declarations don't contain generic expressions to collect
     (void)node;
@@ -663,6 +668,37 @@ void GenericCollector::visit(HandleExpr& node) {
 void GenericCollector::visit(ResumeExpr& node) {
     if (node.value) {
         node.value->accept(*this);
+    }
+}
+
+// Compile-Time Reflection - these don't contain generic expressions to collect
+void GenericCollector::visit(TypeMetadataExpr& node) {
+    (void)node;
+}
+
+void GenericCollector::visit(FieldsOfExpr& node) {
+    (void)node;
+}
+
+void GenericCollector::visit(MethodsOfExpr& node) {
+    (void)node;
+}
+
+void GenericCollector::visit(HasFieldExpr& node) {
+    if (node.fieldName) {
+        node.fieldName->accept(*this);
+    }
+}
+
+void GenericCollector::visit(HasMethodExpr& node) {
+    if (node.methodName) {
+        node.methodName->accept(*this);
+    }
+}
+
+void GenericCollector::visit(FieldTypeExpr& node) {
+    if (node.fieldName) {
+        node.fieldName->accept(*this);
     }
 }
 

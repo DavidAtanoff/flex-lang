@@ -2,6 +2,7 @@
 // Declaration type checking
 
 #include "checker_base.h"
+#include "semantic/ctfe/ctfe_interpreter.h"
 #include <algorithm>
 
 namespace tyl {
@@ -9,6 +10,11 @@ namespace tyl {
 void TypeChecker::visit(FnDecl& node) {
     auto& reg = TypeRegistry::instance();
     auto fnType = std::make_shared<FunctionType>();
+    
+    // Register comptime functions early so they can be used in compile-time assertions
+    if (node.isComptime) {
+        getGlobalCTFEInterpreter().registerComptimeFunction(&node);
+    }
     
     // Handle generic type parameters
     fnType->typeParams = node.typeParams;

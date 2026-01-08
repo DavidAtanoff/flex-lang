@@ -98,6 +98,7 @@ private:
     StmtPtr requireStatement();
     StmtPtr ensureStatement();
     StmtPtr comptimeBlock();
+    StmtPtr comptimeAssertStatement(SourceLocation loc);
     StmtPtr effectDeclaration();
     
     // Pratt parser expression parsing (parser_expressions.cpp)

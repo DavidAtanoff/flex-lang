@@ -36,7 +36,7 @@ static bool evaluateCfg(const std::string& condition) {
 StmtPtr Parser::declaration() {
     skipNewlines();
     
-    // Parse attributes: #[repr(C)], #[repr(packed)], #[repr(align(N))], #[cdecl], #[stdcall], #[export], #[hidden], #[weak], #[cfg(...)], etc.
+    // Parse attributes: #[repr(C)], #[repr(packed)], #[repr(align(N))], #[cdecl], #[stdcall], #[export], #[hidden], #[weak], #[cfg(...)], @derive(...), etc.
     bool reprC = false;
     bool reprPacked = false;
     int reprAlign = 0;
@@ -46,6 +46,7 @@ StmtPtr Parser::declaration() {
     bool isHidden = false;
     bool isWeak = false;
     bool skipDeclaration = false;  // For cfg that evaluates to false
+    std::vector<std::string> deriveTraits;  // @derive(Debug, Clone, Eq)
     
     while (check(TokenType::ATTRIBUTE)) {
         auto attrTok = advance();
@@ -57,6 +58,28 @@ StmtPtr Parser::declaration() {
             bool result = evaluateCfg(condition);
             if (!result) {
                 skipDeclaration = true;
+            }
+        }
+        // Parse derive(...) for automatic trait implementation
+        else if (attr.find("derive(") == 0) {
+            std::string deriveArg = attr.substr(7, attr.length() - 8);  // Extract content between derive( and )
+            // Parse comma-separated trait names
+            size_t pos = 0;
+            while (pos < deriveArg.length()) {
+                // Skip whitespace
+                while (pos < deriveArg.length() && (deriveArg[pos] == ' ' || deriveArg[pos] == '\t')) pos++;
+                if (pos >= deriveArg.length()) break;
+                
+                // Find end of trait name
+                size_t start = pos;
+                while (pos < deriveArg.length() && deriveArg[pos] != ',' && deriveArg[pos] != ' ') pos++;
+                
+                if (pos > start) {
+                    deriveTraits.push_back(deriveArg.substr(start, pos - start));
+                }
+                
+                // Skip comma
+                while (pos < deriveArg.length() && (deriveArg[pos] == ',' || deriveArg[pos] == ' ')) pos++;
             }
         }
         // Parse repr(...) attributes
@@ -171,6 +194,12 @@ StmtPtr Parser::declaration() {
     bool isAsync = match(TokenType::ASYNC);
     bool isComptime = match(TokenType::COMPTIME);
     
+    // Handle comptime assert at declaration level
+    if (isComptime && match(TokenType::ASSERT)) {
+        auto loc = previous().location;
+        return comptimeAssertStatement(loc);
+    }
+    
     if (match(TokenType::FN)) {
         auto fn = fnDeclaration();
         auto* fnDecl = static_cast<FnDecl*>(fn.get());
@@ -191,6 +220,7 @@ StmtPtr Parser::declaration() {
         recDecl->reprC = reprC;
         recDecl->reprPacked = reprPacked;
         recDecl->reprAlign = reprAlign;
+        recDecl->deriveTraits = deriveTraits;
         return rec;
     }
     if (match(TokenType::UNION)) {

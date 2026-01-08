@@ -1048,6 +1048,126 @@ ExprPtr Parser::primary() {
             return std::make_unique<AsyncYieldExpr>(idLoc);
         }
         
+        // Compile-Time Reflection - fields_of[T]()
+        if (name == "fields_of") {
+            consume(TokenType::LBRACKET, "Expected '[' after fields_of");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after fields_of[T]");
+            consume(TokenType::RPAREN, "Expected ')' after fields_of[T](");
+            return std::make_unique<FieldsOfExpr>(typeName, idLoc);
+        }
+        
+        // Compile-Time Reflection - methods_of[T]()
+        if (name == "methods_of") {
+            consume(TokenType::LBRACKET, "Expected '[' after methods_of");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after methods_of[T]");
+            consume(TokenType::RPAREN, "Expected ')' after methods_of[T](");
+            return std::make_unique<MethodsOfExpr>(typeName, idLoc);
+        }
+        
+        // Compile-Time Reflection - has_field[T](name)
+        if (name == "has_field") {
+            consume(TokenType::LBRACKET, "Expected '[' after has_field");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after has_field[T]");
+            auto fieldNameExpr = expression();
+            consume(TokenType::RPAREN, "Expected ')' after has_field argument");
+            return std::make_unique<HasFieldExpr>(typeName, std::move(fieldNameExpr), idLoc);
+        }
+        
+        // Compile-Time Reflection - has_method[T](name)
+        if (name == "has_method") {
+            consume(TokenType::LBRACKET, "Expected '[' after has_method");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after has_method[T]");
+            auto methodNameExpr = expression();
+            consume(TokenType::RPAREN, "Expected ')' after has_method argument");
+            return std::make_unique<HasMethodExpr>(typeName, std::move(methodNameExpr), idLoc);
+        }
+        
+        // Compile-Time Reflection - field_type[T](name)
+        if (name == "field_type") {
+            consume(TokenType::LBRACKET, "Expected '[' after field_type");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after field_type[T]");
+            auto fieldNameExpr = expression();
+            consume(TokenType::RPAREN, "Expected ')' after field_type argument");
+            return std::make_unique<FieldTypeExpr>(typeName, std::move(fieldNameExpr), idLoc);
+        }
+        
+        // Compile-Time Reflection - type_name[T]()
+        if (name == "type_name") {
+            consume(TokenType::LBRACKET, "Expected '[' after type_name");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after type_name[T]");
+            consume(TokenType::RPAREN, "Expected ')' after type_name[T](");
+            return std::make_unique<TypeMetadataExpr>(typeName, "name", idLoc);
+        }
+        
+        // Compile-Time Reflection - type_size[T]()
+        if (name == "type_size") {
+            consume(TokenType::LBRACKET, "Expected '[' after type_size");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after type_size[T]");
+            consume(TokenType::RPAREN, "Expected ')' after type_size[T](");
+            return std::make_unique<TypeMetadataExpr>(typeName, "size", idLoc);
+        }
+        
+        // Compile-Time Reflection - type_align[T]()
+        if (name == "type_align") {
+            consume(TokenType::LBRACKET, "Expected '[' after type_align");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            consume(TokenType::LPAREN, "Expected '(' after type_align[T]");
+            consume(TokenType::RPAREN, "Expected ')' after type_align[T](");
+            return std::make_unique<TypeMetadataExpr>(typeName, "align", idLoc);
+        }
+        
+        // Compile-Time Type Introspection - is_pod[T]
+        if (name == "is_pod") {
+            consume(TokenType::LBRACKET, "Expected '[' after is_pod");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            // is_pod[T] can be used without parentheses
+            if (check(TokenType::LPAREN)) {
+                consume(TokenType::LPAREN, "Expected '(' after is_pod[T]");
+                consume(TokenType::RPAREN, "Expected ')' after is_pod[T](");
+            }
+            return std::make_unique<TypeMetadataExpr>(typeName, "is_pod", idLoc);
+        }
+        
+        // Compile-Time Type Introspection - is_primitive[T]
+        if (name == "is_primitive") {
+            consume(TokenType::LBRACKET, "Expected '[' after is_primitive");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            if (check(TokenType::LPAREN)) {
+                consume(TokenType::LPAREN, "Expected '(' after is_primitive[T]");
+                consume(TokenType::RPAREN, "Expected ')' after is_primitive[T](");
+            }
+            return std::make_unique<TypeMetadataExpr>(typeName, "is_primitive", idLoc);
+        }
+        
+        // Compile-Time Type Introspection - is_trivially_copyable[T]
+        if (name == "is_trivially_copyable") {
+            consume(TokenType::LBRACKET, "Expected '[' after is_trivially_copyable");
+            std::string typeName = parseType();
+            consume(TokenType::RBRACKET, "Expected ']' after type");
+            if (check(TokenType::LPAREN)) {
+                consume(TokenType::LPAREN, "Expected '(' after is_trivially_copyable[T]");
+                consume(TokenType::RPAREN, "Expected ')' after is_trivially_copyable[T](");
+            }
+            return std::make_unique<TypeMetadataExpr>(typeName, "is_pod", idLoc);  // Same as is_pod
+        }
+        
         // Advanced Concurrency - Channel Timeout
         if (name == "chan_recv_timeout") {
             consume(TokenType::LPAREN, "Expected '(' after chan_recv_timeout");

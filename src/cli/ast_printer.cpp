@@ -849,6 +849,12 @@ void ASTPrinter::visit(ComptimeBlock& n) {
     indent++; n.body->accept(*this); indent--;
 }
 
+void ASTPrinter::visit(ComptimeAssertStmt& n) {
+    std::string msg = n.message.empty() ? "" : ", \"" + n.message + "\"";
+    print("ComptimeAssertStmt" + msg);
+    indent++; n.condition->accept(*this); indent--;
+}
+
 void ASTPrinter::visit(EffectDecl& n) {
     std::string params;
     for (size_t i = 0; i < n.typeParams.size(); i++) {
@@ -905,6 +911,40 @@ void ASTPrinter::visit(ResumeExpr& n) {
     print("ResumeExpr");
     if (n.value) {
         indent++; n.value->accept(*this); indent--;
+    }
+}
+
+// Compile-Time Reflection
+void ASTPrinter::visit(TypeMetadataExpr& n) {
+    print("TypeMetadataExpr: " + n.typeName + "." + n.metadataKind);
+}
+
+void ASTPrinter::visit(FieldsOfExpr& n) {
+    print("FieldsOfExpr: " + n.typeName);
+}
+
+void ASTPrinter::visit(MethodsOfExpr& n) {
+    print("MethodsOfExpr: " + n.typeName);
+}
+
+void ASTPrinter::visit(HasFieldExpr& n) {
+    print("HasFieldExpr: " + n.typeName);
+    if (n.fieldName) {
+        indent++; n.fieldName->accept(*this); indent--;
+    }
+}
+
+void ASTPrinter::visit(HasMethodExpr& n) {
+    print("HasMethodExpr: " + n.typeName);
+    if (n.methodName) {
+        indent++; n.methodName->accept(*this); indent--;
+    }
+}
+
+void ASTPrinter::visit(FieldTypeExpr& n) {
+    print("FieldTypeExpr: " + n.typeName);
+    if (n.fieldName) {
+        indent++; n.fieldName->accept(*this); indent--;
     }
 }
 

@@ -180,6 +180,8 @@ struct RecordDecl : Statement {
     bool reprC = false;        // #[repr(C)] - C-compatible layout
     bool reprPacked = false;   // #[repr(packed)] - no padding
     int reprAlign = 0;         // #[repr(align(N))] - explicit alignment
+    // Derive attribute for automatic trait implementation
+    std::vector<std::string> deriveTraits;  // @derive(Debug, Clone, Eq)
     RecordDecl(std::string n, SourceLocation loc) : name(std::move(n)) { location = loc; } 
     void accept(ASTVisitor& visitor) override; 
 };
@@ -298,6 +300,15 @@ struct InvariantStmt : Statement { ExprPtr condition; std::string message; Invar
 // Comptime block (compile-time execution)
 struct ComptimeBlock : Statement { StmtPtr body; ComptimeBlock(StmtPtr b, SourceLocation loc) : body(std::move(b)) { location = loc; } void accept(ASTVisitor& visitor) override; };
 
+// Compile-time assertion
+// comptime assert sizeof(Header) == 16, "Header must be 16 bytes"
+struct ComptimeAssertStmt : Statement { 
+    ExprPtr condition; 
+    std::string message; 
+    ComptimeAssertStmt(ExprPtr c, std::string m, SourceLocation loc) : condition(std::move(c)), message(std::move(m)) { location = loc; } 
+    void accept(ASTVisitor& visitor) override; 
+};
+
 // Algebraic Effects - Effect Declaration
 // effect Error[E]:
 //     fn raise e: E -> never
@@ -354,6 +365,57 @@ struct HandleExpr : Expression {
 struct ResumeExpr : Expression {
     ExprPtr value;                                       // Value to resume with
     ResumeExpr(ExprPtr v, SourceLocation loc) : value(std::move(v)) { location = loc; }
+    void accept(ASTVisitor& visitor) override;
+};
+
+// Compile-Time Reflection Expressions
+// Type metadata access: T.__name__, T.__fields__, T.__methods__
+struct TypeMetadataExpr : Expression {
+    std::string typeName;                                // Type name (e.g., "Point")
+    std::string metadataKind;                            // "name", "fields", "methods", "size", "align"
+    TypeMetadataExpr(std::string type, std::string kind, SourceLocation loc) 
+        : typeName(std::move(type)), metadataKind(std::move(kind)) { location = loc; }
+    void accept(ASTVisitor& visitor) override;
+};
+
+// fields_of[T]() - returns list of (name, type) tuples for record fields
+struct FieldsOfExpr : Expression {
+    std::string typeName;                                // Type to introspect
+    FieldsOfExpr(std::string type, SourceLocation loc) : typeName(std::move(type)) { location = loc; }
+    void accept(ASTVisitor& visitor) override;
+};
+
+// methods_of[T]() - returns list of method names for a type
+struct MethodsOfExpr : Expression {
+    std::string typeName;                                // Type to introspect
+    MethodsOfExpr(std::string type, SourceLocation loc) : typeName(std::move(type)) { location = loc; }
+    void accept(ASTVisitor& visitor) override;
+};
+
+// has_field[T](name) - check if type has a field with given name
+struct HasFieldExpr : Expression {
+    std::string typeName;                                // Type to check
+    ExprPtr fieldName;                                   // Field name expression (string)
+    HasFieldExpr(std::string type, ExprPtr name, SourceLocation loc) 
+        : typeName(std::move(type)), fieldName(std::move(name)) { location = loc; }
+    void accept(ASTVisitor& visitor) override;
+};
+
+// has_method[T](name) - check if type has a method with given name
+struct HasMethodExpr : Expression {
+    std::string typeName;                                // Type to check
+    ExprPtr methodName;                                  // Method name expression (string)
+    HasMethodExpr(std::string type, ExprPtr name, SourceLocation loc) 
+        : typeName(std::move(type)), methodName(std::move(name)) { location = loc; }
+    void accept(ASTVisitor& visitor) override;
+};
+
+// field_type[T](name) - get the type of a field
+struct FieldTypeExpr : Expression {
+    std::string typeName;                                // Type to introspect
+    ExprPtr fieldName;                                   // Field name expression (string)
+    FieldTypeExpr(std::string type, ExprPtr name, SourceLocation loc) 
+        : typeName(std::move(type)), fieldName(std::move(name)) { location = loc; }
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -471,11 +533,19 @@ struct ASTVisitor {
     virtual void visit(EnsureStmt& node) = 0;
     virtual void visit(InvariantStmt& node) = 0;
     virtual void visit(ComptimeBlock& node) = 0;
+    virtual void visit(ComptimeAssertStmt& node) = 0;
     // Algebraic Effects
     virtual void visit(EffectDecl& node) = 0;
     virtual void visit(PerformEffectExpr& node) = 0;
     virtual void visit(HandleExpr& node) = 0;
     virtual void visit(ResumeExpr& node) = 0;
+    // Compile-Time Reflection
+    virtual void visit(TypeMetadataExpr& node) = 0;
+    virtual void visit(FieldsOfExpr& node) = 0;
+    virtual void visit(MethodsOfExpr& node) = 0;
+    virtual void visit(HasFieldExpr& node) = 0;
+    virtual void visit(HasMethodExpr& node) = 0;
+    virtual void visit(FieldTypeExpr& node) = 0;
     virtual void visit(Program& node) = 0;
 };
 

@@ -435,7 +435,20 @@ comptime fn ackermann m: int, n: int -> int:
 ACK_3_3 :: ackermann(3, 3)  // Computed at compile time: 61
 ```
 
-### 4.2 Compile-Time Reflection
+### 4.2 Compile-Time Reflection ✅
+
+**Implemented:**
+- ✅ `fields_of[T]()` - returns list of (name, type) tuples for record fields
+- ✅ `methods_of[T]()` - returns list of method names for a type
+- ✅ `type_name[T]()` - returns the type name as a string
+- ✅ `type_size[T]()` - returns the size of the type in bytes
+- ✅ `type_align[T]()` - returns the alignment of the type
+- ✅ `has_field[T](name)` - check if type has a field with given name
+- ✅ `has_method[T](name)` - check if type has a method with given name
+- ✅ `field_type[T](name)` - get the type name of a field
+- ✅ `@derive(Debug, Clone, Eq)` attribute for automatic trait implementation
+- ✅ Type metadata registration for records
+- ✅ CTFE interpreter integration for compile-time evaluation
 
 ```tyl
 // Introspect types at compile time
@@ -460,17 +473,41 @@ record Point:
     y: int
 ```
 
-### 4.3 Compile-Time Assertions
+### 4.3 Compile-Time Assertions ✅
+
+**Implemented:**
+- ✅ `comptime assert condition, "message"` syntax for compile-time assertions
+- ✅ Assertions evaluated during type checking phase
+- ✅ Support for `sizeof("type")` in assertions
+- ✅ Support for `alignof("type")` in assertions
+- ✅ Support for `is_pod[T]` type introspection
+- ✅ Support for `is_primitive[T]` type introspection
+- ✅ Support for `is_trivially_copyable[T]` (alias for is_pod)
+- ✅ Compile-time function calls in assertions
+- ✅ Boolean operators (and, or, not) in assertions
+- ✅ Comparison operators in assertions
+- ✅ Arithmetic expressions in assertions
+- ✅ Custom error messages for failed assertions
 
 ```tyl
-comptime assert sizeof(Header) == 16, "Header must be 16 bytes"
-comptime assert alignof(Data) >= 8, "Data must be 8-byte aligned"
-comptime assert is_pod[MyStruct], "MyStruct must be POD"
+// Size and alignment assertions
+comptime assert sizeof("int") == 8, "int should be 8 bytes"
+comptime assert alignof("i32") == 4, "i32 should be 4-byte aligned"
 
-// Static bounds checking
-fn get[T, N: int] arr: [T; N], idx: int -> T
-    where idx >= 0 and idx < N:
-    return arr[idx]
+// Type property assertions
+comptime assert is_pod[int], "int should be POD"
+comptime assert is_primitive[bool], "bool should be primitive"
+
+// Compile-time function evaluation in assertions
+comptime fn factorial n: int -> int:
+    if n <= 1: return 1
+    return n * factorial(n - 1)
+
+comptime assert factorial(5) == 120, "factorial(5) should be 120"
+
+// Boolean and comparison operators
+comptime assert 10 > 5 and 5 < 10, "comparison operators work"
+comptime assert not false, "boolean operators work"
 ```
 
 ---

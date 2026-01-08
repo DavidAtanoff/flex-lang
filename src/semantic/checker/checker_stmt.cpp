@@ -2,6 +2,7 @@
 // Statement type checking
 
 #include "checker_base.h"
+#include "semantic/ctfe/ctfe_interpreter.h"
 
 namespace tyl {
 
@@ -342,6 +343,45 @@ void TypeChecker::visit(ComptimeBlock& node) {
     node.body->accept(*this);
 }
 
+void TypeChecker::visit(ComptimeAssertStmt& node) {
+    // Type check the condition expression
+    node.condition->accept(*this);
+    
+    // The condition should be a boolean expression
+    auto condType = currentType_;
+    if (condType && condType->kind != TypeKind::BOOL) {
+        // Allow implicit conversion to bool for common types
+        if (condType->kind != TypeKind::INT && condType->kind != TypeKind::FLOAT && 
+            condType->kind != TypeKind::STRING && condType->kind != TypeKind::VOID) {
+            warning("Compile-time assertion condition should be a boolean expression", node.location);
+        }
+    }
+    
+    // Evaluate the assertion at compile time using CTFE
+    auto& ctfe = getGlobalCTFEInterpreter();
+    auto result = ctfe.evaluateExpr(node.condition.get());
+    
+    if (!result) {
+        error("Cannot evaluate compile-time assertion at compile time", node.location);
+        return;
+    }
+    
+    auto boolResult = CTFEInterpreter::toBool(*result);
+    if (!boolResult) {
+        error("Compile-time assertion condition must evaluate to a boolean", node.location);
+        return;
+    }
+    
+    if (!*boolResult) {
+        // Assertion failed
+        std::string msg = "Compile-time assertion failed";
+        if (!node.message.empty()) {
+            msg += ": " + node.message;
+        }
+        error(msg, node.location);
+    }
+}
+
 void TypeChecker::visit(EffectDecl& node) {
     // Register the effect in the type system
     auto& reg = TypeRegistry::instance();
@@ -480,6 +520,63 @@ void TypeChecker::visit(ResumeExpr& node) {
     
     // Resume returns the type of the value being resumed with
     // The actual continuation type is determined by the handler context
+}
+
+// ============================================================================
+// Compile-Time Reflection Type Checking
+// ============================================================================
+
+void TypeChecker::visit(TypeMetadataExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    
+    if (node.metadataKind == "name") {
+        currentType_ = reg.stringType();
+    } else if (node.metadataKind == "size" || node.metadataKind == "align") {
+        currentType_ = reg.intType();
+    } else if (node.metadataKind == "is_pod" || node.metadataKind == "is_primitive") {
+        currentType_ = reg.boolType();
+    } else {
+        currentType_ = reg.unknownType();
+    }
+}
+
+void TypeChecker::visit(FieldsOfExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    // Returns list of (str, str) tuples - for now, use list of any
+    currentType_ = reg.listType(reg.anyType());
+}
+
+void TypeChecker::visit(MethodsOfExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    // Returns list of strings
+    currentType_ = reg.listType(reg.stringType());
+}
+
+void TypeChecker::visit(HasFieldExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    // Type check the field name expression
+    if (node.fieldName) {
+        node.fieldName->accept(*this);
+    }
+    currentType_ = reg.boolType();
+}
+
+void TypeChecker::visit(HasMethodExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    // Type check the method name expression
+    if (node.methodName) {
+        node.methodName->accept(*this);
+    }
+    currentType_ = reg.boolType();
+}
+
+void TypeChecker::visit(FieldTypeExpr& node) {
+    auto& reg = TypeRegistry::instance();
+    // Type check the field name expression
+    if (node.fieldName) {
+        node.fieldName->accept(*this);
+    }
+    currentType_ = reg.stringType();
 }
 
 void TypeChecker::visit(Program& node) {

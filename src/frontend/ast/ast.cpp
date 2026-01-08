@@ -140,11 +140,19 @@ void RequireStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void EnsureStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void InvariantStmt::accept(ASTVisitor& v) { v.visit(*this); }
 void ComptimeBlock::accept(ASTVisitor& v) { v.visit(*this); }
+void ComptimeAssertStmt::accept(ASTVisitor& v) { v.visit(*this); }
 // Algebraic Effects
 void EffectDecl::accept(ASTVisitor& v) { v.visit(*this); }
 void PerformEffectExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void HandleExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void ResumeExpr::accept(ASTVisitor& v) { v.visit(*this); }
+// Compile-Time Reflection
+void TypeMetadataExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void FieldsOfExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void MethodsOfExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void HasFieldExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void HasMethodExpr::accept(ASTVisitor& v) { v.visit(*this); }
+void FieldTypeExpr::accept(ASTVisitor& v) { v.visit(*this); }
 void Program::accept(ASTVisitor& v) { v.visit(*this); }
 
 } // namespace tyl

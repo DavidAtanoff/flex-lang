@@ -243,11 +243,19 @@ public:
     void visit(EnsureStmt& node) override;
     void visit(InvariantStmt& node) override;
     void visit(ComptimeBlock& node) override;
+    void visit(ComptimeAssertStmt& node) override;
     // Algebraic Effects
     void visit(EffectDecl& node) override;
     void visit(PerformEffectExpr& node) override;
     void visit(HandleExpr& node) override;
     void visit(ResumeExpr& node) override;
+    // Compile-Time Reflection
+    void visit(TypeMetadataExpr& node) override;
+    void visit(FieldsOfExpr& node) override;
+    void visit(MethodsOfExpr& node) override;
+    void visit(HasFieldExpr& node) override;
+    void visit(HasMethodExpr& node) override;
+    void visit(FieldTypeExpr& node) override;
     void visit(Program& node) override;
     
 private:

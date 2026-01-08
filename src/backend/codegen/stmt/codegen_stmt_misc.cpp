@@ -990,6 +990,14 @@ bool NativeCodeGen::tryEvalComptimeCall(Expression* expr, int64_t& outValue) {
     return false;
 }
 
+void NativeCodeGen::visit(ComptimeAssertStmt& node) {
+    // Compile-time assertions are evaluated during type checking
+    // By the time we reach code generation, the assertion has already passed
+    // (if it failed, compilation would have stopped with an error)
+    // So we don't need to generate any runtime code
+    (void)node;
+}
+
 // Algebraic Effects - Effect Declaration
 void NativeCodeGen::visit(EffectDecl& node) {
     // Effect declarations are compile-time only - they define the effect interface
@@ -1397,6 +1405,159 @@ void NativeCodeGen::visit(ResumeExpr& node) {
     // For our implementation, resume is called within a handler body
     // and the value in RAX will be used as the handler's return value
     // The handler will then return, and execution continues after the perform
+    
+    lastExprWasFloat_ = false;
+}
+
+// ============================================================================
+// Compile-Time Reflection Expressions
+// ============================================================================
+
+void NativeCodeGen::visit(TypeMetadataExpr& node) {
+    // Type metadata is evaluated at compile time by the CTFE interpreter
+    // At runtime, we just load the pre-computed value
+    
+    if (node.metadataKind == "name") {
+        // Return the type name as a string
+        uint32_t strRVA = addString(node.typeName);
+        asm_.lea_rax_rip_fixup(strRVA);
+    } else if (node.metadataKind == "size") {
+        // Return the type size
+        auto sizeOpt = ctfe_.evaluateTypeSize(node.typeName);
+        if (sizeOpt) {
+            auto intVal = CTFEInterpreter::toInt(*sizeOpt);
+            if (intVal) {
+                asm_.mov_rax_imm64(*intVal);
+            } else {
+                asm_.xor_rax_rax();
+            }
+        } else {
+            // Unknown type - return 0
+            asm_.xor_rax_rax();
+        }
+    } else if (node.metadataKind == "align") {
+        // Return the type alignment
+        auto alignOpt = ctfe_.evaluateTypeAlign(node.typeName);
+        if (alignOpt) {
+            auto intVal = CTFEInterpreter::toInt(*alignOpt);
+            if (intVal) {
+                asm_.mov_rax_imm64(*intVal);
+            } else {
+                asm_.xor_rax_rax();
+            }
+        } else {
+            // Unknown type - return 0
+            asm_.xor_rax_rax();
+        }
+    } else {
+        // Unknown metadata kind
+        asm_.xor_rax_rax();
+    }
+    
+    lastExprWasFloat_ = false;
+}
+
+void NativeCodeGen::visit(FieldsOfExpr& node) {
+    // fields_of[T]() returns a list of (name, type) tuples
+    // This is primarily for compile-time use, but we can generate runtime data
+    
+    auto fieldsOpt = ctfe_.evaluateFieldsOf(node.typeName);
+    if (fieldsOpt) {
+        // For runtime, we could generate a static array of field info
+        // For now, return nil as this is primarily a compile-time feature
+        asm_.xor_rax_rax();
+    } else {
+        asm_.xor_rax_rax();
+    }
+    
+    lastExprWasFloat_ = false;
+}
+
+void NativeCodeGen::visit(MethodsOfExpr& node) {
+    // methods_of[T]() returns a list of method names
+    // This is primarily for compile-time use
+    
+    auto methodsOpt = ctfe_.evaluateMethodsOf(node.typeName);
+    if (methodsOpt) {
+        // For runtime, we could generate a static array of method names
+        // For now, return nil as this is primarily a compile-time feature
+        asm_.xor_rax_rax();
+    } else {
+        asm_.xor_rax_rax();
+    }
+    
+    lastExprWasFloat_ = false;
+}
+
+void NativeCodeGen::visit(HasFieldExpr& node) {
+    // has_field[T](name) returns true if type has the field
+    // Evaluate field name at compile time if possible
+    
+    if (auto* strLit = dynamic_cast<StringLiteral*>(node.fieldName.get())) {
+        auto hasFieldOpt = ctfe_.evaluateHasField(node.typeName, strLit->value);
+        if (hasFieldOpt) {
+            auto boolVal = CTFEInterpreter::toBool(*hasFieldOpt);
+            if (boolVal && *boolVal) {
+                asm_.mov_rax_imm64(1);
+            } else {
+                asm_.xor_rax_rax();
+            }
+        } else {
+            asm_.xor_rax_rax();
+        }
+    } else {
+        // Runtime field name - not supported, return false
+        asm_.xor_rax_rax();
+    }
+    
+    lastExprWasFloat_ = false;
+}
+
+void NativeCodeGen::visit(HasMethodExpr& node) {
+    // has_method[T](name) returns true if type has the method
+    // Evaluate method name at compile time if possible
+    
+    if (auto* strLit = dynamic_cast<StringLiteral*>(node.methodName.get())) {
+        auto hasMethodOpt = ctfe_.evaluateHasMethod(node.typeName, strLit->value);
+        if (hasMethodOpt) {
+            auto boolVal = CTFEInterpreter::toBool(*hasMethodOpt);
+            if (boolVal && *boolVal) {
+                asm_.mov_rax_imm64(1);
+            } else {
+                asm_.xor_rax_rax();
+            }
+        } else {
+            asm_.xor_rax_rax();
+        }
+    } else {
+        // Runtime method name - not supported, return false
+        asm_.xor_rax_rax();
+    }
+    
+    lastExprWasFloat_ = false;
+}
+
+void NativeCodeGen::visit(FieldTypeExpr& node) {
+    // field_type[T](name) returns the type name of the field
+    // Evaluate field name at compile time if possible
+    
+    if (auto* strLit = dynamic_cast<StringLiteral*>(node.fieldName.get())) {
+        auto fieldTypeOpt = ctfe_.evaluateFieldType(node.typeName, strLit->value);
+        if (fieldTypeOpt) {
+            auto strVal = CTFEInterpreter::toString(*fieldTypeOpt);
+            if (strVal) {
+                uint32_t strRVA = addString(*strVal);
+                asm_.lea_rax_rip_fixup(strRVA);
+            } else {
+                asm_.xor_rax_rax();
+            }
+        } else {
+            asm_.xor_rax_rax();
+        }
+    } else {
+        // Runtime field name - not supported, return nil
+        asm_.xor_rax_rax();
+    }
     
     lastExprWasFloat_ = false;
 }

@@ -150,6 +150,13 @@ bool NativeCodeGen::isStringReturningExpr(Expression* expr) {
     if (dynamic_cast<StringLiteral*>(expr)) return true;
     if (dynamic_cast<InterpolatedString*>(expr)) return true;
     
+    // Compile-time reflection expressions that return strings
+    if (dynamic_cast<TypeMetadataExpr*>(expr)) {
+        auto* meta = dynamic_cast<TypeMetadataExpr*>(expr);
+        return meta->metadataKind == "name";  // type_name returns string
+    }
+    if (dynamic_cast<FieldTypeExpr*>(expr)) return true;  // field_type returns string
+    
     if (auto* call = dynamic_cast<CallExpr*>(expr)) {
         if (auto* id = dynamic_cast<Identifier*>(call->callee.get())) {
             if (id->name == "platform" || id->name == "arch" ||

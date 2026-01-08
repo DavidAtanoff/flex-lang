@@ -603,10 +603,33 @@ StmtPtr Parser::ensureStatement() {
 
 StmtPtr Parser::comptimeBlock() {
     auto loc = previous().location;
+    
+    // Check for comptime assert
+    if (match(TokenType::ASSERT)) {
+        return comptimeAssertStatement(loc);
+    }
+    
     consume(TokenType::COLON, "Expected ':' after comptime");
     match(TokenType::NEWLINE);
     auto body = block();
     return std::make_unique<ComptimeBlock>(std::move(body), loc);
+}
+
+StmtPtr Parser::comptimeAssertStatement(SourceLocation loc) {
+    // comptime assert condition, "message"
+    auto condition = expression();
+    
+    std::string message;
+    if (match(TokenType::COMMA)) {
+        auto msgExpr = expression();
+        if (auto* str = dynamic_cast<StringLiteral*>(msgExpr.get())) {
+            message = str->value;
+        }
+        // If not a string literal, just ignore the message (will be caught at type check time)
+    }
+    
+    match(TokenType::NEWLINE);
+    return std::make_unique<ComptimeAssertStmt>(std::move(condition), message, loc);
 }
 
 StmtPtr Parser::effectDeclaration() {

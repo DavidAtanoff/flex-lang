@@ -51,6 +51,7 @@ enum class TokenType {
     FASTCALL,       // fastcall calling convention
     NAKED,          // naked function attribute
     COMPTIME,       // comptime keyword for compile-time execution
+    ASSERT,         // assert keyword for compile-time assertions
     REQUIRE,        // require keyword for contracts
     ENSURE,         // ensure keyword for contracts
     INVARIANT,      // invariant keyword for contracts
@@ -140,6 +141,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::FASTCALL: return "FASTCALL";
         case TokenType::NAKED: return "NAKED";
         case TokenType::COMPTIME: return "COMPTIME";
+        case TokenType::ASSERT: return "ASSERT";
         case TokenType::REQUIRE: return "REQUIRE";
         case TokenType::ENSURE: return "ENSURE";
         case TokenType::INVARIANT: return "INVARIANT";
