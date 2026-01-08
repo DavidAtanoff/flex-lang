@@ -19,13 +19,13 @@ namespace tyl {
 enum class ValueType { NIL, BOOL, INT, FLOAT, STRING, LIST, RECORD, FUNCTION, NATIVE_FN, RANGE };
 
 struct Value;
-struct FlexFunction;
-struct FlexRecord;
+struct TylFunction;
+struct TylRecord;
 
 using NativeFn = std::function<Value(const std::vector<Value>&)>;
 
-struct FlexFunction { std::string name; std::vector<std::string> params; size_t codeStart; size_t codeEnd; };
-struct FlexRange { int64_t start; int64_t end; int64_t step; };
+struct TylFunction { std::string name; std::vector<std::string> params; size_t codeStart; size_t codeEnd; };
+struct TylRange { int64_t start; int64_t end; int64_t step; };
 
 struct Value {
     ValueType type = ValueType::NIL;
@@ -33,9 +33,9 @@ struct Value {
     std::string stringVal;
     std::vector<Value> listVal;
     std::unordered_map<std::string, Value> recordVal;
-    std::shared_ptr<FlexFunction> funcVal;
+    std::shared_ptr<TylFunction> funcVal;
     NativeFn nativeVal;
-    FlexRange rangeVal;
+    TylRange rangeVal;
     
     Value() : type(ValueType::NIL), intVal(0) {}
     explicit Value(bool v) : type(ValueType::BOOL), boolVal(v) {}
@@ -45,9 +45,9 @@ struct Value {
     Value(const std::string& v) : type(ValueType::STRING), intVal(0), stringVal(v) {}
     Value(const char* v) : type(ValueType::STRING), intVal(0), stringVal(v) {}  // Handle string literals
     Value(std::vector<Value> v) : type(ValueType::LIST), intVal(0), listVal(std::move(v)) {}
-    Value(std::shared_ptr<FlexFunction> f) : type(ValueType::FUNCTION), intVal(0), funcVal(std::move(f)) {}
+    Value(std::shared_ptr<TylFunction> f) : type(ValueType::FUNCTION), intVal(0), funcVal(std::move(f)) {}
     Value(NativeFn f) : type(ValueType::NATIVE_FN), intVal(0), nativeVal(std::move(f)) {}
-    Value(FlexRange r) : type(ValueType::RANGE), rangeVal(r) {}
+    Value(TylRange r) : type(ValueType::RANGE), rangeVal(r) {}
     
     // Template constructor for lambdas - converts to NativeFn
     template<typename F, typename = std::enable_if_t<

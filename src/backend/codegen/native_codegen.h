@@ -275,9 +275,9 @@ private:
     std::set<std::string> fnPtrVars_;                      // Variables that hold function pointers
     std::set<std::string> closureVars_;                    // Variables that hold closures (lambdas)
     
-    // Callback/trampoline support for passing Flex functions to C
+    // Callback/trampoline support for passing Tyl functions to C
     struct CallbackInfo {
-        std::string flexFnName;                            // Name of the Flex function
+        std::string tylFnName;                            // Name of the Tyl function
         std::string trampolineLabel;                       // Label for the trampoline wrapper
         CallingConvention callingConv;                     // Calling convention for the callback
         std::vector<std::string> paramTypes;               // Parameter types

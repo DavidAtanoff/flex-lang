@@ -54,7 +54,7 @@ void NativeCodeGen::collectCallbackFunctions(Program& program) {
             // If function has explicit calling convention, create callback info
             if (fn->callingConv != CallingConvention::Default) {
                 CallbackInfo info;
-                info.flexFnName = fn->name;
+                info.tylFnName = fn->name;
                 info.trampolineLabel = "__callback_" + fn->name;
                 info.callingConv = fn->callingConv;
                 info.returnType = fn->returnType;
@@ -67,8 +67,8 @@ void NativeCodeGen::collectCallbackFunctions(Program& program) {
     }
 }
 
-// Emit a callback trampoline that wraps a Flex function for C calling conventions
-// The trampoline converts from the specified calling convention to Flex's internal convention
+// Emit a callback trampoline that wraps a Tyl function for C calling conventions
+// The trampoline converts from the specified calling convention to Tyl's internal convention
 void NativeCodeGen::emitCallbackTrampoline(const std::string& fnName, const CallbackInfo& info) {
     // Create label for the trampoline
     asm_.label(info.trampolineLabel);
@@ -88,7 +88,7 @@ void NativeCodeGen::emitCallbackTrampoline(const std::string& fnName, const Call
     // RCX, RDX, R8, R9 for first 4 integer/pointer args
     // XMM0-XMM3 for first 4 float args
     
-    // Call the actual Flex function
+    // Call the actual Tyl function
     asm_.call_rel32(fnName);
     
     // Epilogue

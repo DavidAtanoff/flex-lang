@@ -270,7 +270,7 @@ void Linker::generateMapFile() {
     std::ofstream map(mapPath);
     if (!map) return;
     
-    map << "Flex Linker Map File\n";
+    map << "Tyl Linker Map File\n";
     map << "Output: " << config_.outputFile << "\n\n";
     
     map << "Sections:\n";

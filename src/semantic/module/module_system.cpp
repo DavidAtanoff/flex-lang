@@ -10,11 +10,11 @@
 namespace tyl {
 
 std::string ModuleSystem::resolveModulePath(const std::string& moduleName, const std::string& fromFile) {
-    // If it's already a file path (contains / or \ or ends with .fx/.flex)
+    // If it's already a file path (contains / or \ or ends with .ty/.tyl)
     if (moduleName.find('/') != std::string::npos || 
         moduleName.find('\\') != std::string::npos ||
-        strEndsWith(moduleName, ".tyl") || 
-        strEndsWith(moduleName, ".flex")) {
+        strEndsWith(moduleName, ".ty") || 
+        strEndsWith(moduleName, ".tyl")) {
         
         // Resolve relative to fromFile if provided
         if (!fromFile.empty()) {

@@ -1,7 +1,7 @@
-# Flex Language Roadmap
+# Tyl Language Roadmap
 
 ## Vision
-Flex aims to be the definitive low-level systems language - combining the performance of C, the safety features of Rust, and syntax cleaner than all of them.
+Tyl aims to be the definitive low-level systems language - combining the performance of C, the safety features of Rust, and syntax cleaner than all of them.
 
 ---
 
@@ -543,11 +543,11 @@ Add more stuff to custom x64 codegen with LLVM IR Src for:
 ### 5.3 Optimization Levels
 
 ```bash
-flex build                  # -O0: No optimization (fast compile)
-flex build --release        # -O2: Standard optimization
-flex build --release-fast   # -O3: Aggressive optimization
-flex build --release-small  # -Os: Size optimization
-flex build --release-lto    # -O2 + LTO: Link-time optimization
+tyl build                  # -O0: No optimization (fast compile)
+tyl build --release        # -O2: Standard optimization
+tyl build --release-fast   # -O3: Aggressive optimization
+tyl build --release-small  # -Os: Size optimization
+tyl build --release-lto    # -O2 + LTO: Link-time optimization
 ```
 
 ### 5.4 Target Platforms
@@ -571,10 +571,10 @@ flex build --release-lto    # -O2 + LTO: Link-time optimization
 ### 6.1 Formatter
 
 ```bash
-flex fmt                    # Format current directory
-flex fmt src/               # Format specific directory
-flex fmt --check            # Check without modifying
-flex fmt --config flex.toml # Custom config
+tyl fmt                    # Format current directory
+tyl fmt src/               # Format specific directory
+tyl fmt --check            # Check without modifying
+tyl fmt --config tyl.toml # Custom config
 ```
 
 Configuration:
@@ -590,16 +590,16 @@ sort_imports = true
 ### 6.2 Package Manager
 
 ```bash
-flex init my_project        # Create new project
-flex add json               # Add dependency
-flex add http --features tls
-flex remove json
-flex update                 # Update dependencies
-flex publish                # Publish to registry
-flex search "http client"   # Search packages
+tyl init my_project        # Create new project
+tyl add json               # Add dependency
+tyl add http --features tls
+tyl remove json
+tyl update                 # Update dependencies
+tyl publish                # Publish to registry
+tyl search "http client"   # Search packages
 ```
 
-Manifest (flex.toml):
+Manifest (tyl.toml):
 ```toml
 [package]
 name = "my_project"
@@ -630,20 +630,20 @@ no_std = []
 ### 6.3 Build System
 
 ```bash
-flex build                  # Debug build
-flex build --release        # Release build
-flex build --target linux-x64
-flex build --features "async,tls"
-flex clean                  # Clean build artifacts
-flex run                    # Build and run
-flex run --release
-flex run -- arg1 arg2       # Pass args to program
+tyl build                  # Debug build
+tyl build --release        # Release build
+tyl build --target linux-x64
+tyl build --features "async,tls"
+tyl clean                  # Clean build artifacts
+tyl run                    # Build and run
+tyl run --release
+tyl run -- arg1 arg2       # Pass args to program
 ```
 
 ### 6.4 REPL
 
 ```bash
-flex repl                   # Interactive mode
+tyl repl                   # Interactive mode
 
 >>> x = 42
 42
@@ -680,8 +680,8 @@ Features:
 ### 6.6 Debugger Integration
 
 ```bash
-flex build --debug          # Include debug symbols
-flex debug ./program        # Launch with debugger
+tyl build --debug          # Include debug symbols
+tyl debug ./program        # Launch with debugger
 ```
 
 Features:
@@ -722,11 +722,11 @@ fn bench_sort:
 ```
 
 ```bash
-flex test                   # Run all tests
-flex test test_math         # Run specific test file
-flex test --filter "sort"   # Filter by name
-flex test --benchmark       # Run benchmarks
-flex test --coverage        # Generate coverage report
+tyl test                   # Run all tests
+tyl test test_math         # Run specific test file
+tyl test --filter "sort"   # Filter by name
+tyl test --benchmark       # Run benchmarks
+tyl test --coverage        # Generate coverage report
 ```
 
 ### 6.8 Documentation Generator
@@ -755,9 +755,9 @@ fn factorial n: int -> int:
 ```
 
 ```bash
-flex doc                    # Generate documentation
-flex doc --open             # Generate and open in browser
-flex doc --json             # Output as JSON
+tyl doc                    # Generate documentation
+tyl doc --open             # Generate and open in browser
+tyl doc --json             # Output as JSON
 ```
 
 ---

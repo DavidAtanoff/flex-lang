@@ -35,9 +35,9 @@ inline Diagnostic unexpectedChar(char c, const SourceLocation& loc) {
     d.span = toSpan(loc);
     
     if (c == '@') {
-        d.suggestion = "did you mean to use a decorator? Flex doesn't support decorators yet";
+        d.suggestion = "did you mean to use a decorator? Tyl doesn't support decorators yet";
     } else if (c == '$') {
-        d.suggestion = "variable names don't need $ prefix in Flex";
+        d.suggestion = "variable names don't need $ prefix in Tyl";
     }
     return d;
 }

@@ -135,7 +135,7 @@ void ProfileCollector::instrumentLoop(WhileStmt* whileStmt, const std::string& f
 
 std::string ProfileCollector::generateProfileFormat() const {
     std::ostringstream ss;
-    ss << "# Flex Profile Data Format v1.0\n";
+    ss << "# Tyl Profile Data Format v1.0\n";
     ss << "# Counters: " << counterIndex_ << "\n";
     ss << "# Functions: " << functionsInstrumented_ << "\n";
     ss << "# Branches: " << branchesInstrumented_ << "\n";
@@ -571,7 +571,7 @@ bool ProfileWriter::writeText(const ProgramProfile& profile, const std::string& 
     std::ofstream file(filename);
     if (!file.is_open()) return false;
     
-    file << "# Flex Profile Data v1.0\n";
+    file << "# Tyl Profile Data v1.0\n";
     file << "# Program: " << profile.programName << "\n";
     file << "# Total execution time: " << profile.totalExecutionTime << " cycles\n";
     file << "# Hot functions: " << profile.hotFunctions.size() << "\n";

@@ -66,7 +66,7 @@ void NativeCodeGen::visit(Block& node) {
             }
         }
         
-        // Track ExprStmt containing AssignExpr (Flex syntax: x = value)
+        // Track ExprStmt containing AssignExpr (Tyl syntax: x = value)
         if (auto* exprStmt = dynamic_cast<ExprStmt*>(stmt.get())) {
             if (auto* assignExpr = dynamic_cast<AssignExpr*>(exprStmt->expr.get())) {
                 if (auto* targetId = dynamic_cast<Identifier*>(assignExpr->target.get())) {
@@ -276,7 +276,7 @@ void NativeCodeGen::visit(ContinueStmt& node) {
 }
 
 void NativeCodeGen::visit(TryStmt& node) {
-    // TryStmt in Flex is a try-else expression (like Rust's ? operator)
+    // TryStmt in Tyl is a try-else expression (like Rust's ? operator)
     // tryExpr is evaluated, and if it fails, elseExpr is used
     // For now, just evaluate the try expression
     node.tryExpr->accept(*this);
