@@ -1,0 +1,35 @@
+// Simple test for Jump Threading optimization
+
+fn test_known_condition -> int:
+    x := 5
+    mut result := 0
+    
+    // After x := 5, the condition x == 5 is known to be true
+    // Jump threading should thread through this
+    if x == 5:
+        result = 10
+    
+    return result
+
+fn test_implied_condition -> int:
+    x := 10
+    
+    // If x < 15 is true, then x < 20 is also true
+    // Jump threading can use this implication
+    if x < 15:
+        if x < 20:
+            return 42
+    
+    return 0
+
+fn main:
+    r1 := test_known_condition()
+    r2 := test_implied_condition()
+    
+    println("test_known_condition: " + str(r1))
+    println("test_implied_condition: " + str(r2))
+    
+    if r1 == 10 and r2 == 42:
+        println("All jump threading tests PASSED!")
+    else:
+        println("Some tests FAILED!")
